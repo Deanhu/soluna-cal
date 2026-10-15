@@ -20,7 +20,7 @@ public struct SettingsView: View {
                 .toggleStyle(.switch).controlSize(.small)
             Toggle("登录后自动启动", isOn: $launchAtLogin)
                 .toggleStyle(.switch).controlSize(.small)
-                .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = $1 }
+                .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
 
             Divider()
 

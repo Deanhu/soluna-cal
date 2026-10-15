@@ -12,6 +12,10 @@ enum RenderHarnessMain {
 
         let view = CalendarPopoverView(store: BirthdayStore())
         let hosting = NSHostingView(rootView: view)
+        // --dark：强制深色外观，用于深色模式自查
+        if CommandLine.arguments.contains("--dark") {
+            hosting.appearance = NSAppearance(named: .darkAqua)
+        }
         hosting.frame = NSRect(x: 0, y: 0, width: 320, height: 430)
         hosting.layoutSubtreeIfNeeded()
 

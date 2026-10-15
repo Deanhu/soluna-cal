@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import LunarCore
 
 /// 月历弹窗：实现 v3.4 颜色语义系统
@@ -36,11 +37,14 @@ public struct CalendarPopoverView: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
         .onAppear { refreshEvents() }
-        .onChange(of: displayed) { _ in refreshEvents() }
+        .onChange(of: displayed) { refreshEvents() }
     }
 
     private func refreshEvents() {
-        EventProvider.shared.requestAccessIfNeeded()
+        EventProvider.shared.requestAccessIfNeeded { [self] in
+            EventProvider.shared.refresh(year: cal.component(.year, from: displayed),
+                                         month: cal.component(.month, from: displayed))
+        }
         EventProvider.shared.refresh(year: cal.component(.year, from: displayed),
                                      month: cal.component(.month, from: displayed))
     }
@@ -125,8 +129,10 @@ public struct CalendarPopoverView: View {
                 text = t.description; color = .term
             } else if lunar.day == 1 {
                 text = (lunar.isLeapMonth ? "闰" : "") + LunarDate.monthName(lunar.month) + "月"
-            } else if store.match(date: d, lunar: lunar) != nil {
-                text = "生日"; color = .festival
+            }
+            // 生日优先于初一月份名（「妈妈的生日」比「冬月初一」对用户更重要）
+            if let b = store.match(date: d, lunar: lunar) {
+                text = b.name.count <= 2 ? b.name : "生日"; color = inMonth ? .festival : .faint
             }
             if !inMonth { color = .faint }
 
@@ -214,7 +220,7 @@ public struct CalendarPopoverView: View {
     }
 
     private func numberColor(_ cell: DayCell) -> Color {
-        if !cell.inMonth { return Color(hex: 0xC7C7CC) }
+        if !cell.inMonth { return .adaptive(light: 0xC7C7CC, dark: 0x545456) }
         if case .off = cell.status { return Color(hex: 0xE64545) }
         if cell.lunarColor == .festival { return .primary }
         return .primary
@@ -222,9 +228,9 @@ public struct CalendarPopoverView: View {
 
     private func lunarColor(_ cell: DayCell) -> Color {
         switch cell.lunarColor {
-        case .festival: return Color(hex: 0xD43030)
-        case .term:     return Color(hex: 0xB8860B)
-        case .faint:    return Color(hex: 0xC7C7CC)
+        case .festival: return .adaptive(light: 0xD43030, dark: 0xFF6961)
+        case .term:     return .adaptive(light: 0xB8860B, dark: 0xE3B341)
+        case .faint:    return .adaptive(light: 0xC7C7CC, dark: 0x545456)
         case .normal:   return .secondary
         }
     }
@@ -232,8 +238,8 @@ public struct CalendarPopoverView: View {
     private func bandBg(_ cell: DayCell) -> some View {
         let tint: Color
         switch cell.status {
-        case .off:  tint = Color(hex: 0xFFF0EF)
-        case .work: tint = Color(hex: 0xF0F0F2)
+        case .off:  tint = .adaptive(light: 0xFFF0EF, dark: 0x452524)
+        case .work: tint = .adaptive(light: 0xF0F0F2, dark: 0x2E2E30)
         default:    tint = .clear
         }
         var radii = RectangleCornerRadii()
@@ -254,7 +260,7 @@ public struct CalendarPopoverView: View {
                 Text("距 \(next.name) 还有 ")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 + Text("\(next.days)").font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0xD43030))
+                    .foregroundStyle(Color.adaptive(light: 0xD43030, dark: 0xFF6961))
                 + Text(" 天").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -272,5 +278,16 @@ public extension Color {
         self.init(red: Double((hex >> 16) & 0xFF) / 255,
                   green: Double((hex >> 8) & 0xFF) / 255,
                   blue: Double(hex & 0xFF) / 255)
+    }
+
+    /// 深浅色自适应：浅色模式用 light，深色模式用 dark
+    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let v = isDark ? dark : light
+            return NSColor(red: CGFloat((v >> 16) & 0xFF) / 255,
+                           green: CGFloat((v >> 8) & 0xFF) / 255,
+                           blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+        })
     }
 }
