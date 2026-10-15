@@ -69,6 +69,26 @@ public final class EventProvider {
         guard authorized else { return [] }
         return cached[Self.key(of: date)] ?? []
     }
+
+    /// 写入：在指定日创建 1 小时事件（二期双击创建；macOS 14 fullAccess 含写权限）
+    /// 失败抛出具体错误（无权限 / 无默认日历 / 系统拒绝），调用方负责提示
+    public func addEvent(title: String, on date: Date) throws {
+        guard authorized else { throw NSError(domain: "SolunaCal", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "未授权系统日历"]) }
+        guard let target = store.defaultCalendarForNewEvents else {
+            throw NSError(domain: "SolunaCal", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "系统日历没有可写入的日历"])
+        }
+        let cal = Calendar(identifier: .gregorian)
+        let start = cal.date(bySettingHour: 9, minute: 0, second: 0, of: date)!
+        let ev = EKEvent(eventStore: store)
+        ev.title = title
+        ev.startDate = start
+        ev.endDate = start.addingTimeInterval(3600)
+        ev.calendar = target
+        try store.save(ev, span: .thisEvent)
+        refresh(year: cal.component(.year, from: date), month: cal.component(.month, from: date))
+    }
 }
 
 /// 登录自启（SMAppService，macOS 13+）

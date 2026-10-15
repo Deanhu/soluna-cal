@@ -91,6 +91,27 @@ final class BirthdayStoreTests: XCTestCase {
         XCTAssertEqual(r?.days, 25)
     }
 
+    // MARK: 闰月生日（同一闰月间隔 2~19 年，400 天扫描必漏，改按年直查）
+
+    func testNextOccurrenceLeapMonth() {
+        // 闰五月初一：2026-10-15 起算 → 2028-06-23（lunar-python 独立核对）
+        store.add(.init(name: "闰", lunarMonth: 5, lunarDay: 1, isLeapMonth: true))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2026, 10, 15))
+        XCTAssertEqual(r?.date, date(2028, 6, 23))
+        // 命中判定自洽：查到的公历日必须能 matches 回来
+        XCTAssertTrue(store.matches(store.entries[0], date: date(2028, 6, 23)))
+        // 2028-05-24 = 非闰五月初一（lunar-python 核实）→ 不得命中闰五月条目
+        XCTAssertFalse(store.matches(store.entries[0], date: date(2028, 5, 24)))
+    }
+
+    func testNextOccurrenceLeapMonthPast() {
+        // 起算点在闰月之前：2025-06-01 → 2025 闰六月初一 = 2025-07-25（lunar-python 独立核对）
+        store.add(.init(name: "闰六", lunarMonth: 6, lunarDay: 1, isLeapMonth: true))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2025, 6, 1))
+        XCTAssertEqual(r?.date, date(2025, 7, 25))
+        XCTAssertEqual(r?.days, 54)
+    }
+
     // MARK: 同步冲突裁决（PRD：以最新修改为准）
 
     func testPreferCloudDecision() {

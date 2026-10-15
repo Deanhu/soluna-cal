@@ -18,12 +18,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var timer: Timer?
+    private var hoverTimer: Timer?
     private let store = BirthdayStore()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         HolidayStore.refreshInBackground()
         // 同步登录自启注册状态与偏好（升级/重装后保持一致）
         if UserDefaults.standard.bool(forKey: "launchAtLogin") { LaunchAtLogin.apply() }
+
+        // 全局快捷键（二期）：默认 ⌥C 呼出弹窗
+        HotKeyManager.shared.onTrigger = { [weak self] in self?.togglePopover() }
+        HotKeyManager.shared.register(HotKeyManager.saved)
+
+        // 通知：启动时全量重排 + 每日 03:30 重排（幂等）
+        NotificationManager.reschedule(store: store)
+        Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+            let c = Calendar(identifier: .gregorian)
+            if c.component(.hour, from: Date()) == 3 { NotificationManager.reschedule(store: self.store) }
+        }.tolerance = 60
 
         // 调试预览：--preview 直接把弹窗内容放进普通窗口（供截图自查）
         if CommandLine.arguments.contains("--preview") {
@@ -53,6 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         updateTitle()
+
+        // 悬停弹出（二期）：trackingArea 跟随按钮可视区域；owner 必须是 NSResponder
+        if let button = statusItem.button {
+            hoverTracker.onEnter = { [weak self] in self?.scheduleHoverOpen() }
+            hoverTracker.onExit = { [weak self] in
+                self?.hoverTimer?.invalidate(); self?.hoverTimer = nil
+            }
+            button.addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: hoverTracker, userInfo: nil))
+        }
 
         popover = NSPopover()
         popover.behavior = .transient
@@ -87,6 +111,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: 悬停弹出
+
+    private let hoverTracker = HoverTracker()
+
+    private func scheduleHoverOpen() {
+        guard UserDefaults.standard.bool(forKey: "hoverEnabled"), popover.isShown == false else { return }
+        let delay = UserDefaults.standard.object(forKey: "hoverDelay") != nil
+            ? UserDefaults.standard.double(forKey: "hoverDelay") : 0.4
+        hoverTimer?.invalidate()
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self, let button = self.statusItem.button, !self.popover.isShown else { return }
+            self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
     private func updateTitle() {
         guard UserDefaults.standard.integer(forKey: "statusItemStyle") != 2 else {
             statusItem.button?.title = ""
@@ -111,6 +150,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wc.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+}
+
+/// 悬停事件接收器（NSTrackingArea 的 owner 必须是 NSResponder）
+private final class HoverTracker: NSResponder {
+    var onEnter: () -> Void = {}
+    var onExit: () -> Void = {}
+    override func mouseEntered(with event: NSEvent) { onEnter() }
+    override func mouseExited(with event: NSEvent) { onExit() }
 }
 
 /// 首次引导标记

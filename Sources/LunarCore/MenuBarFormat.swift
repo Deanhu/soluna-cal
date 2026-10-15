@@ -1,7 +1,7 @@
 import Foundation
 
 /// 菜单栏格式 token 拼装引擎（二期 V2-1）
-/// token：{Y}年 {M}月 {D}日 {W}周几 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖
+/// token：{Y}年 {M}月 {D}日 {W}周几 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支
 /// 非法 token 原样保留（不崩不空白）；空模板回退默认。
 public enum MenuBarFormat {
     public static let defaultTemplate = "{M}月{D}日 周{W}"
@@ -63,6 +63,7 @@ public enum MenuBarFormat {
         case "SX":
             guard let l = lunar else { return "" }
             return Ganzhi.animal(l.year)
+        case "GD": return Ganzhi.day(date)   // 日干支（锚点法，不依赖农历表范围）
         default: return nil
         }
     }

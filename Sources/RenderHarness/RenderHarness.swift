@@ -11,9 +11,18 @@ enum RenderHarnessMain {
         app.setActivationPolicy(.accessory)
 
         let args = CommandLine.arguments
+        // 防跨次污染：命令行可执行文件的 UserDefaults 以进程名为域且持久化到磁盘。
+        // 先清残留，再用 volatile 域（不落盘、优先级高于持久域）覆盖本 harness 管理的全部 key。
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "RenderHarness")
+        UserDefaults.standard.removePersistentDomain(forName: "RenderHarness")
+        var flags: [String: Any] = [
+            "popoverDensity": "standard",
+            "skin": "default",
+            "ganzhiEnabled": false,
+        ]
         // --density=compact|standard|comfortable：渲染指定密度
         if let flag = args.first(where: { $0.hasPrefix("--density=") }) {
-            UserDefaults.standard.set(String(flag.dropFirst("--density=".count)), forKey: "popoverDensity")
+            flags["popoverDensity"] = String(flag.dropFirst("--density=".count))
         }
         // --month=YYYY-MM：渲染指定月份（边界翻页自查用）
         var initialMonth: Date?
@@ -23,6 +32,36 @@ enum RenderHarnessMain {
                 initialMonth = Calendar(identifier: .gregorian)
                     .date(from: DateComponents(year: parts[0], month: parts[1], day: 15))
             }
+        }
+        // --skin=default|springFestival：渲染指定皮肤
+        if let flag = args.first(where: { $0.hasPrefix("--skin=") }) {
+            flags["skin"] = String(flag.dropFirst("--skin=".count))
+        }
+        // --ganzhi：开启干支时辰行（真太阳时校正需定位，离屏下退回 120°E）
+        if args.contains("--ganzhi") {
+            flags["ganzhiEnabled"] = true
+        }
+        // 清完残留后把本 harness 管理的 key 全量显式写入（含默认值），保证单次运行自洽
+        for (key, value) in flags { UserDefaults.standard.set(value, forKey: key) }
+        // --select=YYYY-MM-DD：预选某日（渲染选中日区域：日程列表/干支行）
+        // --edit=YYYY-MM-DD：让某日进入就地编辑条状态（双击创建事件的编辑态）
+        var initialSelected: Date?
+        var initialEditing: Date?
+        func parseDay(_ flag: String) -> Date? {
+            let parts = flag.split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3 else { return nil }
+            return Calendar(identifier: .gregorian)
+                .date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+        }
+        if let flag = args.first(where: { $0.hasPrefix("--select=") }) {
+            initialSelected = parseDay(String(flag.dropFirst("--select=".count)))
+        }
+        if let flag = args.first(where: { $0.hasPrefix("--edit=") }) {
+            initialEditing = parseDay(String(flag.dropFirst("--edit=".count)))
+        }
+        // --format-custom：让设置页落在「自定义」格式档，渲染模板编辑器与实时预览
+        if args.contains("--format-custom") {
+            UserDefaults.standard.set("{GY}{SX} {M}月{D}日 {W} {LM}{LD}", forKey: "menuBarTemplate")
         }
         // --settings / --onboarding：渲染对应视图；默认渲染月历弹窗
         // --demo-birthdays：用纯内存示例数据（不碰真实 UserDefaults / iCloud）
@@ -41,7 +80,7 @@ enum RenderHarnessMain {
         } else if args.contains("--onboarding") {
             hosting = NSHostingView(rootView: AnyView(OnboardingView(onFinish: {})))
         } else {
-            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth)))
+            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth, initialSelected: initialSelected, initialEditing: initialEditing)))
         }
         // --dark：强制深色外观，用于深色模式自查
         if args.contains("--dark") {

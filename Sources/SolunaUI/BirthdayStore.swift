@@ -70,11 +70,27 @@ public final class BirthdayStore: ObservableObject {
     public func remove(_ e: Entry) { entries.removeAll { $0.id == e.id }; save() }
 
     /// 某条目下次出现的公历日期与距今天数（0 = 今天）。
-    /// 农历年周期最长约 384 天（闰月年），扫 400 天必命中。
+    /// 非闰月条目：农历年周期最长约 384 天（闰月年），扫 400 天必命中。
+    /// 闰月条目：同一闰月间隔 2~19 年不等（如 2025 闰六月→2036 闰六月），扫描必漏，
+    /// 改为按年直查 `leapMonth(of:)` 再正算公历日。
     public func nextOccurrence(of entry: Entry,
                                from: Date = Date()) -> (date: Date, days: Int)? {
         let gcal = Calendar(identifier: .gregorian)
         let start = gcal.startOfDay(for: from)
+        if entry.calendar == .lunar, entry.cycle == .yearly, entry.isLeapMonth {
+            let fromYear = gcal.component(.year, from: start)
+            for y in fromYear...LunarCalendar.supportedRange.upperBound {
+                guard LunarCalendar.leapMonth(of: y) == entry.lunarMonth,
+                      entry.lunarDay <= LunarCalendar.monthDays(year: y, month: entry.lunarMonth, leap: true)
+                else { continue }
+                let d = LunarCalendar.solarDate(from: LunarDate(
+                    year: y, month: entry.lunarMonth, day: entry.lunarDay, isLeapMonth: true))
+                if d >= start {
+                    return (d, gcal.dateComponents([.day], from: start, to: d).day ?? 0)
+                }
+            }
+            return nil
+        }
         for offset in 0..<400 {
             guard let d = gcal.date(byAdding: .day, value: offset, to: start),
                   let lunar = LunarCalendar.lunarDateOrNil(from: d) else { continue }
@@ -104,6 +120,12 @@ public final class BirthdayStore: ObservableObject {
     /// 命中检查：该公历日是否命中某条目（按条目自身的历法与周期）
     public func match(date: Date, lunar: LunarDate) -> Entry? {
         entries.first { matchEntry($0, date: date, lunar: lunar) }
+    }
+
+    /// 单条目公开版（通知计划器等外部调用；超出历法数据范围返回 false）
+    public func matches(_ entry: Entry, date: Date) -> Bool {
+        guard let lunar = LunarCalendar.lunarDateOrNil(from: date) else { return false }
+        return matchEntry(entry, date: date, lunar: lunar)
     }
 
     private func load() {

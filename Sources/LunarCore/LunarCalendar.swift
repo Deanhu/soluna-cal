@@ -7,6 +7,10 @@ public struct LunarDate: Equatable, CustomStringConvertible {
     public let day: Int          // 1-29/30
     public let isLeapMonth: Bool
 
+    public init(year: Int, month: Int, day: Int, isLeapMonth: Bool = false) {
+        self.year = year; self.month = month; self.day = day; self.isLeapMonth = isLeapMonth
+    }
+
     public var description: String {
         "\(year)\(isLeapMonth ? " 闰" : " ")\(Self.monthName(month))月\(Self.dayName(day))"
     }

@@ -58,6 +58,8 @@ targets:
         embed: true
       - target: LunarCore
         embed: true
+      - target: SolunaWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal
@@ -69,9 +71,29 @@ targets:
         # 菜单栏纯配件应用：不出现在 Dock
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "SolunaCal"
-        INFOPLIST_KEY_NSCalendarsUsageDescription: "用于在月历中展示你的日程（只读，不修改日历数据）"
+        INFOPLIST_KEY_NSCalendarsUsageDescription: "读取日程用于月历展示；双击日期可创建事件写回系统日历"
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "真太阳时校正需要一次定位获取经度；拒绝则按东八区中央经线计算"
         CURRENT_PROJECT_VERSION: "1"
         MARKETING_VERSION: "0.1.0"
+
+  SolunaWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/SolunaWidget
+      - path: Sources/LunarCore   # 历法引擎直接编进扩展（内置数据表，无需跨进程共享）
+    settings:
+      base:
+        PRODUCT_NAME: SolunaWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal.widget
+        INFOPLIST_FILE: Sources/SolunaWidget/Info.plist
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+          - "@executable_path/../../../../Frameworks"
+        SKIP_INSTALL: YES
 
   LunarCoreTests:
     type: bundle.unit-test

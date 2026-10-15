@@ -9,17 +9,27 @@ import LunarCore
 /// - 节日红字 / 节气赭金 = 纯文字，不用图形重量
 public struct CalendarPopoverView: View {
     /// initialMonth：预览/测试用，可指定起始月份（如边界 1900-01 / 2099-12）
-    public init(store: BirthdayStore, initialMonth: Date? = nil) {
+    /// initialSelected：预览/测试用，预选某日以渲染选中日区域（干支行、日程列表）
+    /// initialEditing：预览/测试用，让某日直接进入就地编辑条状态
+    public init(store: BirthdayStore, initialMonth: Date? = nil, initialSelected: Date? = nil, initialEditing: Date? = nil) {
         self.store = store
         _displayed = State(initialValue: initialMonth ?? Date())
+        _selectedDay = State(initialValue: initialSelected)
+        _editingDay = State(initialValue: initialEditing)
     }
     @ObservedObject var store: BirthdayStore
     @State private var displayed: Date
     @State private var showSettings = false
     @State private var selectedDay: Date?
+    @State private var editingDay: Date?
+    @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
+    @State private var newEventTitle = ""
+    @State private var eventError: String?
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
     @AppStorage("popoverDensity") private var densityRaw = PopoverDensity.standard.rawValue
+    @AppStorage("skin") private var skinRaw = Skin.default.rawValue
+    @AppStorage("ganzhiEnabled") private var ganzhiEnabled = false
     private let cal = Calendar(identifier: .gregorian)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
@@ -27,12 +37,14 @@ public struct CalendarPopoverView: View {
     private var t: PopoverDensity.Tokens {
         (PopoverDensity(rawValue: densityRaw) ?? .standard).tokens
     }
+    private var skin: Skin { Skin(rawValue: skinRaw) ?? .default }
 
     public var body: some View {
         VStack(spacing: 0) {
             header
             weekdayRow
             monthGrid
+            inlineEventEditor
             selectedDayEvents
             if yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
@@ -51,6 +63,9 @@ public struct CalendarPopoverView: View {
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
         .onAppear { refreshEvents() }
         .onChange(of: displayed) { refreshEvents() }
+        .onReceive(NotificationCenter.default.publisher(for: .locationDidUpdate)) { _ in
+            locationTick += 1
+        }
     }
 
     private func refreshEvents() {
@@ -201,6 +216,47 @@ public struct CalendarPopoverView: View {
         }
     }
 
+    /// 双击日期的就地编辑条（二期：写入系统日历）
+    @ViewBuilder
+    private var inlineEventEditor: some View {
+        if let ed = editingDay {
+            let m = cal.component(.month, from: ed)
+            let d = cal.component(.day, from: ed)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("\(m)月\(d)日")
+                        .font(.system(size: t.footerFont, weight: .medium))
+                    TextField("事件名称（写进系统日历）", text: $newEventTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: t.footerFont))
+                        .onSubmit { commitEvent() }
+                    Button("保存") { commitEvent() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(newEventTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("取消") { editingDay = nil; eventError = nil }
+                        .buttonStyle(.plain).controlSize(.small)
+                }
+                if let err = eventError {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .padding(.horizontal, 8).padding(.top, 4)
+        }
+    }
+
+    private func commitEvent() {
+        guard let ed = editingDay else { return }
+        let title = newEventTitle.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+        do {
+            try EventProvider.shared.addEvent(title: title, on: ed)
+            editingDay = nil; newEventTitle = ""; eventError = nil
+            selectedDay = ed   // 保存后直接展示该日（能看到新事件点）
+        } catch {
+            eventError = "写入失败：\(error.localizedDescription)"
+        }
+    }
+
     /// 选中日的事件列表（点日期展开；只读）
     @ViewBuilder
     private var selectedDayEvents: some View {
@@ -212,6 +268,7 @@ public struct CalendarPopoverView: View {
                 Text("\(m)月\(d)日 日程")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
+                if ganzhiEnabled { ganzhiLine(for: sel) }
                 if events.isEmpty {
                     Text(EventProvider.shared.authorized ? "当日无日程" : "授权系统日历后显示当日日程")
                         .font(.system(size: 11)).foregroundStyle(.tertiary)
@@ -224,6 +281,20 @@ public struct CalendarPopoverView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8).padding(.top, 4)
         }
+    }
+
+    /// 干支时辰行（默认关）：日柱 + 当前时辰（真太阳时校正）
+    private func ganzhiLine(for day: Date) -> some View {
+        let lon = LocationProvider.shared.longitude
+        let corrected = TrueSolarTime.correct(Date(), longitude: lon)
+        let sc = Shichen.of(date: corrected)
+        let delta = TrueSolarTime.correctionMinutes(for: Date(), longitude: lon)
+        let located = LocationProvider.shared.isLocated
+        return Text("日柱 \(Ganzhi.day(day)) · 现在\(sc.ganzhi)时"
+            + "（真太阳时\(delta >= 0 ? "+" : "")\(String(format: "%.0f", delta))分"
+            + (located ? "" : "·未定位") + "）")
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
@@ -246,7 +317,7 @@ public struct CalendarPopoverView: View {
                 .font(.system(size: t.numberFont))
                 .foregroundStyle(cell.isToday ? .white : numberColor(cell))
                 .frame(width: t.todayCircle, height: t.todayCircle)
-                .background(cell.isToday ? Color.accentColor : .clear)
+                .background(cell.isToday ? skin.todayFill : .clear)
                 .clipShape(Circle())
                 .overlay(
                     Circle().strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
@@ -267,7 +338,12 @@ public struct CalendarPopoverView: View {
         .frame(maxWidth: .infinity)
         .background(bandBg(cell))
         .contentShape(Rectangle())
-        .onTapGesture {
+        .onTapGesture(count: 2) {
+            editingDay = cell.date
+            newEventTitle = ""
+            eventError = nil
+        }
+        .onTapGesture(count: 1) {
             selectedDay = isSelected(cell) ? nil : cell.date
         }
     }
@@ -279,20 +355,20 @@ public struct CalendarPopoverView: View {
 
     private func badgeBg(_ cell: DayCell) -> Color {
         guard let b = cell.showBadge else { return .clear }
-        return b == "休" ? Color(hex: 0xFF3B30) : Color(hex: 0x6E6E73)
+        return b == "休" ? skin.badgeOff : skin.badgeWork
     }
 
     private func numberColor(_ cell: DayCell) -> Color {
         if !cell.inMonth { return .adaptive(light: 0xC7C7CC, dark: 0x545456) }
-        if case .off = cell.status { return .adaptive(light: 0xFF3B30, dark: 0xFF6961) }
+        if case .off = cell.status { return skin.holidayNumber }
         if cell.lunarColor == .festival { return .primary }
         return .primary
     }
 
     private func lunarColor(_ cell: DayCell) -> Color {
         switch cell.lunarColor {
-        case .festival: return .adaptive(light: 0xD43030, dark: 0xFF6961)
-        case .term:     return .adaptive(light: 0xB8860B, dark: 0xE3B341)
+        case .festival: return skin.festivalText
+        case .term:     return skin.termText
         case .faint:    return .adaptive(light: 0xC7C7CC, dark: 0x545456)
         case .normal:   return .adaptive(light: 0x86868B, dark: 0x98989D)
         }
@@ -301,8 +377,8 @@ public struct CalendarPopoverView: View {
     private func bandBg(_ cell: DayCell) -> some View {
         let tint: Color
         switch cell.status {
-        case .off:  tint = .adaptive(light: 0xFDECEA, dark: 0x4E2A28)
-        case .work: tint = .adaptive(light: 0xF0F0F2, dark: 0x2E2E30)
+        case .off:  tint = skin.bandOff
+        case .work: tint = skin.bandWork
         default:    tint = .clear
         }
         var radii = RectangleCornerRadii()
@@ -323,7 +399,7 @@ public struct CalendarPopoverView: View {
                 Text("距 \(next.name) 还有 ")
                     .font(.system(size: t.footerFont)).foregroundStyle(.secondary)
                 + Text("\(next.days)").font(.system(size: t.footerFont, weight: .semibold))
-                    .foregroundStyle(Color.adaptive(light: 0xD43030, dark: 0xFF6961))
+                    .foregroundStyle(skin.countdownAccent)
                 + Text(" 天").font(.system(size: t.footerFont)).foregroundStyle(.secondary)
             }
             Spacer()

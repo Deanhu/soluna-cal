@@ -102,7 +102,7 @@ public enum HolidayStore {
         return (wd == 1 || wd == 7) ? .weekend : .normal
     }
 
-    static func load(year: Int) -> HolidayData {
+    public static func load(year: Int) -> HolidayData {
         if let cached = try? Data(contentsOf: cacheDir.appendingPathComponent("holidays-\(year).json")),
            let hd = try? JSONDecoder().decode(HolidayData.self, from: cached) {
             return hd
