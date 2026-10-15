@@ -10,6 +10,8 @@ public struct CalendarPopoverView: View {
     public init(store: BirthdayStore) { self.store = store }
     @ObservedObject var store: BirthdayStore
     @State private var displayed: Date = Date()
+    @State private var showSettings = false
+    @AppStorage("yijiEnabled") private var yijiEnabled = false
     private let cal = Calendar(identifier: .gregorian)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
@@ -18,12 +20,29 @@ public struct CalendarPopoverView: View {
             header
             weekdayRow
             monthGrid
+            if yijiEnabled, let yj = Yiji.on(date: Date()) {
+                Text("宜 \(yj.yi)　忌 \(yj.ji)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8).padding(.top, 3)
+            }
             Divider().padding(.top, 2)
             footer
         }
         .frame(width: 300)
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $showSettings) { SettingsView(store: store) }
+        .onAppear { refreshEvents() }
+        .onChange(of: displayed) { _ in refreshEvents() }
+    }
+
+    private func refreshEvents() {
+        EventProvider.shared.requestAccessIfNeeded()
+        EventProvider.shared.refresh(year: cal.component(.year, from: displayed),
+                                     month: cal.component(.month, from: displayed))
     }
 
     // MARK: 头部
@@ -178,6 +197,11 @@ public struct CalendarPopoverView: View {
                 .font(.system(size: 9))
                 .foregroundStyle(lunarColor(cell))
                 .lineLimit(1)
+            // 事件点（系统日历只读整合）
+            Circle()
+                .fill(EventProvider.shared.hasEvent(on: cell.date) && cell.inMonth
+                      ? Color.accentColor : .clear)
+                .frame(width: 4, height: 4)
                 .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity)
@@ -234,6 +258,8 @@ public struct CalendarPopoverView: View {
                 + Text(" 天").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
+            Button(action: { showSettings = true }) { Image(systemName: "gearshape") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
             Button(action: { displayed = Date() }) { Text("回到今天") }
                 .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Color.accentColor)
         }
