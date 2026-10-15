@@ -26,7 +26,7 @@ public struct CalendarPopoverView: View {
             selectedDayEvents
             if yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -83,7 +83,7 @@ public struct CalendarPopoverView: View {
     private var weekdayRow: some View {
         LazyVGrid(columns: columns, spacing: 0) {
             ForEach(["一","二","三","四","五","六","日"], id: \.self) { w in
-                Text(w).font(.system(size: 9)).foregroundStyle(.secondary)
+                Text(w).font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
     }
@@ -174,7 +174,7 @@ public struct CalendarPopoverView: View {
     }
 
     private var monthGrid: some View {
-        LazyVGrid(columns: columns, spacing: 0) {
+        LazyVGrid(columns: columns, spacing: 2) {
             ForEach(monthCells) { cell in cellView(cell) }
         }
     }
@@ -211,7 +211,7 @@ public struct CalendarPopoverView: View {
             HStack {
                 Spacer(minLength: 0)
                 Text(cell.showBadge ?? " ")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 2)
                     .background(badgeBg(cell))
@@ -232,14 +232,14 @@ public struct CalendarPopoverView: View {
                 )
             // 农历小字（非当月格不显示，避免噪音）
             Text(cell.inMonth ? cell.lunarText : " ")
-                .font(.system(size: 9))
+                .font(.system(size: 10))
                 .foregroundStyle(lunarColor(cell))
                 .lineLimit(1)
             // 事件点（系统日历只读整合）
             Circle()
                 .fill(EventProvider.shared.hasEvent(on: cell.date) && cell.inMonth
                       ? Color.accentColor : .clear)
-                .frame(width: 4, height: 4)
+                .frame(width: 5, height: 5)
                 .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity)
@@ -257,12 +257,12 @@ public struct CalendarPopoverView: View {
 
     private func badgeBg(_ cell: DayCell) -> Color {
         guard let b = cell.showBadge else { return .clear }
-        return b == "休" ? Color(hex: 0xE64545) : Color(hex: 0x6E6E73)
+        return b == "休" ? Color(hex: 0xFF3B30) : Color(hex: 0x6E6E73)
     }
 
     private func numberColor(_ cell: DayCell) -> Color {
         if !cell.inMonth { return .adaptive(light: 0xC7C7CC, dark: 0x545456) }
-        if case .off = cell.status { return Color(hex: 0xE64545) }
+        if case .off = cell.status { return .adaptive(light: 0xFF3B30, dark: 0xFF6961) }
         if cell.lunarColor == .festival { return .primary }
         return .primary
     }
@@ -272,14 +272,14 @@ public struct CalendarPopoverView: View {
         case .festival: return .adaptive(light: 0xD43030, dark: 0xFF6961)
         case .term:     return .adaptive(light: 0xB8860B, dark: 0xE3B341)
         case .faint:    return .adaptive(light: 0xC7C7CC, dark: 0x545456)
-        case .normal:   return .secondary
+        case .normal:   return .adaptive(light: 0x86868B, dark: 0x98989D)
         }
     }
 
     private func bandBg(_ cell: DayCell) -> some View {
         let tint: Color
         switch cell.status {
-        case .off:  tint = .adaptive(light: 0xFFF0EF, dark: 0x452524)
+        case .off:  tint = .adaptive(light: 0xFDECEA, dark: 0x4E2A28)
         case .work: tint = .adaptive(light: 0xF0F0F2, dark: 0x2E2E30)
         default:    tint = .clear
         }
