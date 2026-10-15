@@ -8,6 +8,7 @@ public struct SettingsView: View {
     @AppStorage("countdownEnabled") private var countdownEnabled = true
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("popoverDensity") private var popoverDensity = PopoverDensity.standard.rawValue
+    @AppStorage("menuBarLunar") private var menuBarLunar = false
     @State private var newName = ""
     @State private var newMonth = 1
     @State private var newDay = 1
@@ -37,6 +38,12 @@ public struct SettingsView: View {
             Toggle("登录后自动启动", isOn: $launchAtLogin)
                 .toggleStyle(.switch).controlSize(.small)
                 .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
+
+            Toggle("菜单栏显示农历", isOn: $menuBarLunar)
+                .toggleStyle(.switch).controlSize(.small)
+                .onChange(of: menuBarLunar) {
+                    NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
+                }
 
             HStack {
                 Text("弹窗密度").font(.callout)

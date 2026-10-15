@@ -66,6 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.updateTitle()
         }
+        // 设置里切换「菜单栏显示农历」立即生效（不等下一次定时刷新）
+        NotificationCenter.default.addObserver(
+            forName: .menuBarTitleNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
+            self?.updateTitle()
+        }
 
         if Onboarding.needsOnboarding {
             showOnboarding()
@@ -87,12 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = ""
             return
         }
-        let now = Date()
-        let cal = Calendar(identifier: .gregorian)
-        let weekday = ["?","日","一","二","三","四","五","六"][cal.component(.weekday, from: now)]
-        statusItem.button?.title = String(
-            format: "%d月%d日 周%@",
-            cal.component(.month, from: now), cal.component(.day, from: now), weekday)
+        statusItem.button?.title = MenuBarTitle.format(
+            Date(), showLunar: UserDefaults.standard.bool(forKey: "menuBarLunar"))
     }
 
     private func showOnboarding() {

@@ -29,6 +29,18 @@ final class LunarCoreTests: XCTestCase {
         XCTAssertEqual(LunarCalendar.supportedRange, 1900...2099)
     }
 
+    // MARK: 菜单栏标题
+
+    func testMenuBarTitle() {
+        // 2026-10-15 = 周四 = 农历九月初六（独立编译核对）
+        XCTAssertEqual(MenuBarTitle.format(date(2026, 10, 15), showLunar: false), "10月15日 周四")
+        XCTAssertEqual(MenuBarTitle.format(date(2026, 10, 15), showLunar: true),
+                       "10月15日 周四 · 九月初六")
+        // 闰月：2025-07-25 = 闰六月初一（独立编译核对，leap=true）
+        XCTAssertEqual(MenuBarTitle.format(date(2025, 7, 25), showLunar: true),
+                       "7月25日 周五 · 闰六月初一")
+    }
+
     func testKnownDates() {
         // 2026-10-14 = 九月初五
         let l1 = LunarCalendar.lunarDate(from: date(2026, 10, 14))
