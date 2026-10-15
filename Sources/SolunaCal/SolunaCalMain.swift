@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         HolidayStore.refreshInBackground()
+        // 同步登录自启注册状态与偏好（升级/重装后保持一致）
+        if UserDefaults.standard.bool(forKey: "launchAtLogin") { LaunchAtLogin.apply() }
 
         // 调试预览：--preview 直接把弹窗内容放进普通窗口（供截图自查）
         if CommandLine.arguments.contains("--preview") {
