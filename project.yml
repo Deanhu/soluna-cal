@@ -40,6 +40,9 @@ targets:
       base:
         PRODUCT_NAME: SolunaUI
         PRODUCT_BUNDLE_IDENTIFIER: com.soluna.solunaui
+      configs:
+        debug:
+          ENABLE_TESTABILITY: YES
 
   SolunaCal:
     type: application
@@ -70,6 +73,7 @@ targets:
       - path: Tests/LunarCoreTests
     dependencies:
       - target: LunarCore
+      - target: SolunaUI
     settings:
       base:
         PRODUCT_NAME: LunarCoreTests

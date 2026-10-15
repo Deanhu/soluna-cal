@@ -78,17 +78,17 @@ final class LunarCoreTests: XCTestCase {
 
     func testHolidayStatus() {
         HolidayStore.calendar = cal
-        XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 1)), .off("国庆中秋"))
-        XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 10)), .work("国庆中秋"))
+        XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 1)), .off("国庆节"))
+        XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 10)), .work("国庆节"))
         XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 14)), .normal)
         XCTAssertEqual(HolidayStore.status(on: date(2026, 10, 18)), .weekend)
     }
 
     func testNextHoliday() {
         HolidayStore.calendar = cal
-        // 2026-09-25 → 国庆中秋 还有 6 天
+        // 2026-09-25 → 国庆节 还有 6 天（中秋 9/25 当天已开始，取段首比较自然跳过）
         let n = HolidayStore.nextHoliday(after: date(2026, 9, 25))
-        XCTAssertEqual(n?.name, "国庆中秋")
+        XCTAssertEqual(n?.name, "国庆节")
         XCTAssertEqual(n?.days, 6)
         // 跨年：年内假期过完后落到次年元旦兜底
         let n2 = HolidayStore.nextHoliday(after: date(2026, 10, 14))

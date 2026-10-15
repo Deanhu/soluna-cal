@@ -16,10 +16,12 @@ public enum Yiji {
 public final class EventProvider {
     public static let shared = EventProvider()
     private let store = EKEventStore()
-    private var authorized = false
-    private var cachedDays: Set<String> = []   // "yyyy-M-d"
+    private var cached: [String: [String]] = [:]   // "yyyy-M-d" -> 当日事件标题
 
     private init() {}
+
+    /// 是否已获系统日历授权（驱动「授权后显示」提示文案）
+    public private(set) var authorized = false
 
     /// 请求授权；授权通过后立即执行 completion（用于首刷当月事件点）
     public func requestAccessIfNeeded(then completion: (() -> Void)? = nil) {
@@ -41,21 +43,31 @@ public final class EventProvider {
               let end = cal.date(byAdding: .month, value: 1, to: start) else { return }
         let pred = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         let events = store.events(matching: pred)
-        var days = Set<String>()
+        var map: [String: [String]] = [:]
         for e in events {
             let dc = cal.dateComponents([.year, .month, .day], from: e.startDate)
             if let y = dc.year, let m = dc.month, let d = dc.day {
-                days.insert("\(y)-\(m)-\(d)")
+                map["\(y)-\(m)-\(d)", default: []].append(e.title)
             }
         }
-        cachedDays = days
+        cached = map
+    }
+
+    private static func key(of date: Date) -> String {
+        let cal = Calendar(identifier: .gregorian)
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return "\(c.year!)-\(c.month!)-\(c.day!)"
     }
 
     public func hasEvent(on date: Date) -> Bool {
         guard authorized else { return false }
-        let cal = Calendar(identifier: .gregorian)
-        let c = cal.dateComponents([.year, .month, .day], from: date)
-        return cachedDays.contains("\(c.year!)-\(c.month!)-\(c.day!)")
+        return cached[Self.key(of: date)] != nil
+    }
+
+    /// 当日事件标题列表（只读；无授权/无事件 = 空）
+    public func events(on date: Date) -> [String] {
+        guard authorized else { return [] }
+        return cached[Self.key(of: date)] ?? []
     }
 }
 

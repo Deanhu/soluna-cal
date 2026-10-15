@@ -26,7 +26,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LunarCoreTests",
-            dependencies: ["LunarCore"],
+            dependencies: ["LunarCore", "SolunaUI"],
             path: "Tests/LunarCoreTests"
         )
     ]

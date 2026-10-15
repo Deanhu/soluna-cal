@@ -50,19 +50,22 @@ public struct HolidayData: Codable {
 public enum HolidayStore {
     public static var calendar = Calendar(identifier: .gregorian)
 
-    /// 内置兜底数据（发版时更新；断网/双源皆挂时用）
+    /// 内置兜底数据（断网/双源皆挂时用）
     static let bundled: [HolidayData] = [
+        // BUNDLED-BEGIN 由 tools/gen_holiday_data.py 从 timor.tech 真实数据机械生成，勿手改
         HolidayData(year: 2026, ranges: [
-            .init(name: "元旦",   off: ["01-01","01-02","01-03"], work: []),
-            .init(name: "春节",   off: ["02-16","02-17","02-18","02-19","02-20","02-21","02-22"], work: ["02-14","02-28"]),
-            .init(name: "清明",   off: ["04-04","04-05","04-06"], work: []),
+            .init(name: "元旦", off: ["01-01","01-02","01-03"], work: ["01-04"]),
+            .init(name: "春节", off: ["02-15","02-16","02-17","02-18","02-19","02-20","02-21","02-22","02-23"], work: ["02-28"]),
+            .init(name: "清明节", off: ["04-04","04-05","04-06"], work: []),
             .init(name: "劳动节", off: ["05-01","05-02","05-03","05-04","05-05"], work: ["05-09"]),
-            .init(name: "端午",   off: ["06-19","06-20","06-21"], work: []),
-            .init(name: "国庆中秋", off: ["10-01","10-02","10-03","10-04","10-05","10-06","10-07"], work: ["10-10"]),
+            .init(name: "端午节", off: ["06-19","06-20","06-21"], work: []),
+            .init(name: "中秋节", off: ["09-25","09-26","09-27"], work: []),
+            .init(name: "国庆节", off: ["10-01","10-02","10-03","10-04","10-05","10-06","10-07"], work: ["10-10"]),
         ]),
-        // 跨年倒计时需要次年元旦兜底；次年完整安排在国务院通知发布后更新
+        // BUNDLED-END
+        // 跨年倒计时的次年元旦兜底（手工维护；次年完整安排待国务院通知后跑生成器）
         HolidayData(year: 2027, ranges: [
-            .init(name: "元旦",   off: ["01-01","01-02","01-03"], work: []),
+            .init(name: "元旦", off: ["01-01","01-02","01-03"], work: []),
         ]),
     ]
 
@@ -143,9 +146,18 @@ public enum HolidayStore {
         reconcileInBackground()
     }
 
+    /// timor.tech 有 Cloudflare 挑战，默认 UA 会被 403；必须带浏览器 UA
+    private static func timorRequest(_ url: URL) -> URLRequest {
+        var r = URLRequest(url: url)
+        r.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+                   forHTTPHeaderField: "User-Agent")
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        return r
+    }
+
     private static func refreshYear(_ year: Int) {
         guard let url = URL(string: primaryURLTemplate.replacingOccurrences(of: "{year}", with: "\(year)")) else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: timorRequest(url)) { data, _, _ in
             guard let data,
                   let resp = try? JSONDecoder().decode(TimorResponse.self, from: data),
                   resp.code == 0 else { return }
@@ -180,7 +192,7 @@ public enum HolidayStore {
         return off + "|" + work
     }
 
-    /// 距下一个法定假（名称, 日期, 天数）
+    /// 距下一个法定假（名称, 日期, 天数）；已开始的假期段跳过（不显示「距进行中的假期还有 1 天」）
     public static func nextHoliday(after date: Date) -> (name: String, date: Date, days: Int)? {
         let y = calendar.component(.year, from: date)
         for yy in [y, y + 1] {

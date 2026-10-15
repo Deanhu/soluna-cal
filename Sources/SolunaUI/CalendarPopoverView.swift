@@ -12,7 +12,9 @@ public struct CalendarPopoverView: View {
     @ObservedObject var store: BirthdayStore
     @State private var displayed: Date = Date()
     @State private var showSettings = false
+    @State private var selectedDay: Date?
     @AppStorage("yijiEnabled") private var yijiEnabled = false
+    @AppStorage("countdownEnabled") private var countdownEnabled = true
     private let cal = Calendar(identifier: .gregorian)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
@@ -21,6 +23,7 @@ public struct CalendarPopoverView: View {
             header
             weekdayRow
             monthGrid
+            selectedDayEvents
             if yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
                     .font(.system(size: 9))
@@ -176,6 +179,31 @@ public struct CalendarPopoverView: View {
         }
     }
 
+    /// 选中日的事件列表（点日期展开；只读）
+    @ViewBuilder
+    private var selectedDayEvents: some View {
+        if let sel = selectedDay {
+            let d = cal.component(.day, from: sel)
+            let m = cal.component(.month, from: sel)
+            let events = EventProvider.shared.events(on: sel)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(m)月\(d)日 日程")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                if events.isEmpty {
+                    Text(EventProvider.shared.authorized ? "当日无日程" : "授权系统日历后显示当日日程")
+                        .font(.system(size: 11)).foregroundStyle(.tertiary)
+                } else {
+                    ForEach(events, id: \.self) { t in
+                        Text("· " + t).font(.system(size: 11)).lineLimit(1)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8).padding(.top, 4)
+        }
+    }
+
     @ViewBuilder
     private func cellView(_ cell: DayCell) -> some View {
         VStack(spacing: 1) {
@@ -198,6 +226,10 @@ public struct CalendarPopoverView: View {
                 .frame(width: 22, height: 22)
                 .background(cell.isToday ? Color.accentColor : .clear)
                 .clipShape(Circle())
+                .overlay(
+                    Circle().strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                        .opacity(isSelected(cell) && !cell.isToday ? 1 : 0)
+                )
             // 农历小字（非当月格不显示，避免噪音）
             Text(cell.inMonth ? cell.lunarText : " ")
                 .font(.system(size: 9))
@@ -212,6 +244,15 @@ public struct CalendarPopoverView: View {
         }
         .frame(maxWidth: .infinity)
         .background(bandBg(cell))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedDay = isSelected(cell) ? nil : cell.date
+        }
+    }
+
+    private func isSelected(_ cell: DayCell) -> Bool {
+        guard let sel = selectedDay else { return false }
+        return cal.startOfDay(for: sel) == cal.startOfDay(for: cell.date)
     }
 
     private func badgeBg(_ cell: DayCell) -> Color {
@@ -256,7 +297,7 @@ public struct CalendarPopoverView: View {
 
     private var footer: some View {
         HStack {
-            if let next = HolidayStore.nextHoliday(after: Date()) {
+            if countdownEnabled, let next = HolidayStore.nextHoliday(after: Date()) {
                 Text("距 \(next.name) 还有 ")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 + Text("\(next.days)").font(.system(size: 11, weight: .semibold))

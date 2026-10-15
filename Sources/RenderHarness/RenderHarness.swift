@@ -10,10 +10,19 @@ enum RenderHarnessMain {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        let view = CalendarPopoverView(store: BirthdayStore())
-        let hosting = NSHostingView(rootView: view)
+        let args = CommandLine.arguments
+        // --settings / --onboarding：渲染对应视图；默认渲染月历弹窗
+        let store = BirthdayStore()
+        let hosting: NSHostingView<AnyView>
+        if args.contains("--settings") {
+            hosting = NSHostingView(rootView: AnyView(SettingsView(store: store)))
+        } else if args.contains("--onboarding") {
+            hosting = NSHostingView(rootView: AnyView(OnboardingView(onFinish: {})))
+        } else {
+            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store)))
+        }
         // --dark：强制深色外观，用于深色模式自查
-        if CommandLine.arguments.contains("--dark") {
+        if args.contains("--dark") {
             hosting.appearance = NSAppearance(named: .darkAqua)
         }
         hosting.frame = NSRect(x: 0, y: 0, width: 320, height: 430)
