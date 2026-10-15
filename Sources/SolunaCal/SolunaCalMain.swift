@@ -57,8 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 300, height: 400)
-        popover.contentViewController = NSHostingController(
-            rootView: CalendarPopoverView(store: store))
+        let popoverHC = NSHostingController(rootView: CalendarPopoverView(store: store))
+        // 让 popover 跟随内容尺寸（弹窗密度切换时自动伸缩）
+        popoverHC.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = popoverHC
 
         // 每分钟刷新菜单栏标题
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in

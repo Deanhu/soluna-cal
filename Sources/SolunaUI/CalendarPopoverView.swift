@@ -8,9 +8,13 @@ import LunarCore
 /// - 补班 = 灰底「班」角标 + 浅灰底，数字墨色
 /// - 节日红字 / 节气赭金 = 纯文字，不用图形重量
 public struct CalendarPopoverView: View {
-    public init(store: BirthdayStore) { self.store = store }
+    /// initialMonth：预览/测试用，可指定起始月份（如边界 1900-01 / 2099-12）
+    public init(store: BirthdayStore, initialMonth: Date? = nil) {
+        self.store = store
+        _displayed = State(initialValue: initialMonth ?? Date())
+    }
     @ObservedObject var store: BirthdayStore
-    @State private var displayed: Date = Date()
+    @State private var displayed: Date
     @State private var showSettings = false
     @State private var selectedDay: Date?
     @AppStorage("yijiEnabled") private var yijiEnabled = false
@@ -76,12 +80,18 @@ public struct CalendarPopoverView: View {
     private var monthTitle: String {
         let y = cal.component(.year, from: displayed)
         let m = cal.component(.month, from: displayed)
-        let lunar = LunarCalendar.lunarDate(from: displayed)
+        guard let lunar = LunarCalendar.lunarDateOrNil(from: displayed) else {
+            return String(format: "%d年%d月", y, m)
+        }
         return String(format: "%d年%d月 · %@%@年", y, m, Ganzhi.year(lunar.year), Ganzhi.animal(lunar.year))
     }
 
+    /// 翻页范围钳制在历法数据覆盖区间内（数据外无农历可显示）
     private func shiftMonth(_ delta: Int) {
-        displayed = cal.date(byAdding: .month, value: delta, to: displayed) ?? displayed
+        guard let next = cal.date(byAdding: .month, value: delta, to: displayed) else { return }
+        let y = cal.component(.year, from: next)
+        guard LunarCalendar.supportedRange.contains(y) else { return }
+        displayed = next
     }
 
     // MARK: 星期行
@@ -123,7 +133,13 @@ public struct CalendarPopoverView: View {
         var cells: [DayCell] = (0..<42).map { i in
             let d = cal.date(byAdding: .day, value: i, to: start)!
             let inMonth = cal.component(.month, from: d) == comps.month
-            let lunar = LunarCalendar.lunarDate(from: d)
+            // 翻页边界格可能超出历法数据范围：安全版返回 nil → 农历位空白，不崩溃
+            guard let lunar = LunarCalendar.lunarDateOrNil(from: d) else {
+                return DayCell(date: d, inMonth: inMonth,
+                               isToday: cal.startOfDay(for: d) == today,
+                               status: .normal, lunarText: " ", lunarColor: .faint,
+                               bandRole: .none, showBadge: nil)
+            }
             let status = HolidayStore.status(on: d)
 
             // 农历小字：节日 > 节气 > 初一 > 日

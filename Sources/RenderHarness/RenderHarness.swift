@@ -15,6 +15,15 @@ enum RenderHarnessMain {
         if let flag = args.first(where: { $0.hasPrefix("--density=") }) {
             UserDefaults.standard.set(String(flag.dropFirst("--density=".count)), forKey: "popoverDensity")
         }
+        // --month=YYYY-MM：渲染指定月份（边界翻页自查用）
+        var initialMonth: Date?
+        if let flag = args.first(where: { $0.hasPrefix("--month=") }) {
+            let parts = flag.dropFirst("--month=".count).split(separator: "-").compactMap { Int($0) }
+            if parts.count == 2 {
+                initialMonth = Calendar(identifier: .gregorian)
+                    .date(from: DateComponents(year: parts[0], month: parts[1], day: 15))
+            }
+        }
         // --settings / --onboarding：渲染对应视图；默认渲染月历弹窗
         // --demo-birthdays：用纯内存示例数据（不碰真实 UserDefaults / iCloud）
         let store: BirthdayStore
@@ -32,7 +41,7 @@ enum RenderHarnessMain {
         } else if args.contains("--onboarding") {
             hosting = NSHostingView(rootView: AnyView(OnboardingView(onFinish: {})))
         } else {
-            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store)))
+            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth)))
         }
         // --dark：强制深色外观，用于深色模式自查
         if args.contains("--dark") {

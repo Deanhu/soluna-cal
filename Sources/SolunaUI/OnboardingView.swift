@@ -34,5 +34,6 @@ public struct OnboardingView: View {
             .padding(20)
         }
         .frame(width: 420, height: 300)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

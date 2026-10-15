@@ -38,6 +38,17 @@ public enum LunarCalendar {
         return LUNAR_YEAR_INFOS[year - LUNAR_FIRST_YEAR]
     }
 
+    /// 数据范围内总天数（lunarDateOrNil 的上界判定用，惰性算一次）
+    private static let totalDays: Int = supportedRange.reduce(0) { $0 + yearDays($1) }
+
+    /// UI 安全版换算：超出数据范围（如翻页边界的邻月格、远未来生日扫描）返回 nil，
+    /// 调用方显示空白即可；严格版 lunarDate(from:) 保持 precondition（编程错误尽早暴露）。
+    public static func lunarDateOrNil(from date: Date) -> LunarDate? {
+        let days = gregorian.dateComponents([.day], from: epoch, to: date).day!
+        guard days >= 0, days < totalDays else { return nil }
+        return lunarDate(from: date)
+    }
+
     /// 闰月月份（0 = 无）
     public static func leapMonth(of year: Int) -> Int { Int(yearInfo(year) & 0xF) }
 

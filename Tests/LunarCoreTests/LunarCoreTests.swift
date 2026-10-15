@@ -16,6 +16,19 @@ final class LunarCoreTests: XCTestCase {
         XCTAssertEqual(l, LunarDate(year: 1900, month: 1, day: 1, isLeapMonth: false))
     }
 
+    /// 边界安全版：范围外返回 nil 而不是崩溃（翻页边界格/远未来扫描走这条路）
+    func testLunarDateOrNilBounds() {
+        // 范围内
+        XCTAssertNotNil(LunarCalendar.lunarDateOrNil(from: date(2026, 10, 15)))
+        // 范围上界内：2099 年末
+        XCTAssertNotNil(LunarCalendar.lunarDateOrNil(from: date(2099, 12, 31)))
+        // 范围外：1900-01-31（epoch）之前、农历 2099 年末之后的公历日
+        XCTAssertNil(LunarCalendar.lunarDateOrNil(from: date(1900, 1, 30)))
+        XCTAssertNil(LunarCalendar.lunarDateOrNil(from: date(2100, 6, 15)))
+        // 支持区间声明与数据表一致
+        XCTAssertEqual(LunarCalendar.supportedRange, 1900...2099)
+    }
+
     func testKnownDates() {
         // 2026-10-14 = 九月初五
         let l1 = LunarCalendar.lunarDate(from: date(2026, 10, 14))

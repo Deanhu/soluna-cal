@@ -39,8 +39,17 @@ public final class BirthdayStore: ObservableObject {
 
     @Published public private(set) var entries: [Entry] = []
     private let key = "birthdays.v1"
+    private let mtimeKey = "birthdays.v1.mtime"   // 本地最后修改时间（冲突判定用）
     /// false 时纯内存（测试用，不污染 UserDefaults / iCloud）
     private let persists: Bool
+
+    /// 冲突裁决（PRD：同步冲突以最新修改为准）。
+    /// 本地无时间戳 = 旧版本数据，保持云优先的旧行为；云文件时间读不到 = 信本地。
+    static func preferCloud(cloudMTime: TimeInterval?, localMTime: TimeInterval?) -> Bool {
+        guard let l = localMTime else { return true }
+        guard let c = cloudMTime else { return false }
+        return c >= l
+    }
 
     /// iCloud Drive 同步文件路径（不可用 = nil，静默降级为纯本地）
     private var cloudFile: URL? {
@@ -67,8 +76,8 @@ public final class BirthdayStore: ObservableObject {
         let gcal = Calendar(identifier: .gregorian)
         let start = gcal.startOfDay(for: from)
         for offset in 0..<400 {
-            guard let d = gcal.date(byAdding: .day, value: offset, to: start) else { continue }
-            let lunar = LunarCalendar.lunarDate(from: d)
+            guard let d = gcal.date(byAdding: .day, value: offset, to: start),
+                  let lunar = LunarCalendar.lunarDateOrNil(from: d) else { continue }
             if matchEntry(entry, date: d, lunar: lunar) { return (d, offset) }
         }
         return nil
@@ -98,13 +107,18 @@ public final class BirthdayStore: ObservableObject {
     }
 
     private func load() {
-        // 云端优先（云端存在且能解码则以云端为准）
+        // 双源取「最新修改」：本地时间戳 vs 云文件修改时间（PRD：冲突以最新修改为准）
+        let localTS = UserDefaults.standard.object(forKey: mtimeKey) as? Double
         if let cf = cloudFile,
            let d = try? Data(contentsOf: cf),
            let cloud = try? JSONDecoder().decode([Entry].self, from: d), !cloud.isEmpty {
-            entries = cloud
-            UserDefaults.standard.set(d, forKey: key)   // 回写本地缓存
-            return
+            let cloudTS = (try? FileManager.default.attributesOfItem(
+                atPath: cf.path))?[.modificationDate] as? Date
+            if Self.preferCloud(cloudMTime: cloudTS?.timeIntervalSince1970, localMTime: localTS) {
+                entries = cloud
+                UserDefaults.standard.set(d, forKey: key)   // 回写本地缓存
+                return
+            }
         }
         if let d = UserDefaults.standard.data(forKey: key) {
             entries = (try? JSONDecoder().decode([Entry].self, from: d)) ?? []
@@ -114,6 +128,7 @@ public final class BirthdayStore: ObservableObject {
     private func save() {
         guard persists, let d = try? JSONEncoder().encode(entries) else { return }
         UserDefaults.standard.set(d, forKey: key)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: mtimeKey)
         if let cf = cloudFile {
             try? FileManager.default.createDirectory(
                 at: cf.deletingLastPathComponent(), withIntermediateDirectories: true)

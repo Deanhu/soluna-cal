@@ -90,4 +90,18 @@ final class BirthdayStoreTests: XCTestCase {
         XCTAssertEqual(r?.date, date(2026, 11, 9))
         XCTAssertEqual(r?.days, 25)
     }
+
+    // MARK: 同步冲突裁决（PRD：以最新修改为准）
+
+    func testPreferCloudDecision() {
+        // 本地无时间戳（旧版本数据）→ 云优先（保持旧行为）
+        XCTAssertTrue(BirthdayStore.preferCloud(cloudMTime: 100, localMTime: nil))
+        // 云文件时间读不到 → 信本地（本地更新不该被云端旧数据覆盖）
+        XCTAssertFalse(BirthdayStore.preferCloud(cloudMTime: nil, localMTime: 100))
+        // 云更新 → 云赢；本地更新 → 本地赢（修复前此处恒为云赢 = 本地离线修改丢失）
+        XCTAssertTrue(BirthdayStore.preferCloud(cloudMTime: 200, localMTime: 100))
+        XCTAssertFalse(BirthdayStore.preferCloud(cloudMTime: 100, localMTime: 200))
+        // 相等 → 云优先（内容等价，无实际差异）
+        XCTAssertTrue(BirthdayStore.preferCloud(cloudMTime: 100, localMTime: 100))
+    }
 }
