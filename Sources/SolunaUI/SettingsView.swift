@@ -7,6 +7,7 @@ public struct SettingsView: View {
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
     @AppStorage("launchAtLogin") private var launchAtLogin = false
+    @AppStorage("popoverDensity") private var popoverDensity = PopoverDensity.standard.rawValue
     @State private var newName = ""
     @State private var newMonth = 1
     @State private var newDay = 1
@@ -26,6 +27,17 @@ public struct SettingsView: View {
             Toggle("登录后自动启动", isOn: $launchAtLogin)
                 .toggleStyle(.switch).controlSize(.small)
                 .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
+
+            HStack {
+                Text("弹窗密度").font(.callout)
+                Spacer()
+                Picker("弹窗密度", selection: $popoverDensity) {
+                    ForEach(PopoverDensity.allCases) { d in
+                        Text(d.label).tag(d.rawValue)
+                    }
+                }
+                .labelsHidden().pickerStyle(.segmented).frame(width: 180)
+            }
 
             Divider()
 

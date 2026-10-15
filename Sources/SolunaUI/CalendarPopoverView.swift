@@ -15,8 +15,14 @@ public struct CalendarPopoverView: View {
     @State private var selectedDay: Date?
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
+    @AppStorage("popoverDensity") private var densityRaw = PopoverDensity.standard.rawValue
     private let cal = Calendar(identifier: .gregorian)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+
+    /// 当前密度的整套尺寸 token
+    private var t: PopoverDensity.Tokens {
+        (PopoverDensity(rawValue: densityRaw) ?? .standard).tokens
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +32,7 @@ public struct CalendarPopoverView: View {
             selectedDayEvents
             if yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
-                    .font(.system(size: 10))
+                    .font(.system(size: t.lunarFont))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -35,7 +41,7 @@ public struct CalendarPopoverView: View {
             Divider().padding(.top, 2)
             footer
         }
-        .frame(width: 300)
+        .frame(width: t.popoverWidth)
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
@@ -83,7 +89,7 @@ public struct CalendarPopoverView: View {
     private var weekdayRow: some View {
         LazyVGrid(columns: columns, spacing: 0) {
             ForEach(["一","二","三","四","五","六","日"], id: \.self) { w in
-                Text(w).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(w).font(.system(size: t.lunarFont)).foregroundStyle(.secondary)
             }
         }
     }
@@ -174,7 +180,7 @@ public struct CalendarPopoverView: View {
     }
 
     private var monthGrid: some View {
-        LazyVGrid(columns: columns, spacing: 2) {
+        LazyVGrid(columns: columns, spacing: t.rowSpacing) {
             ForEach(monthCells) { cell in cellView(cell) }
         }
     }
@@ -207,23 +213,23 @@ public struct CalendarPopoverView: View {
     @ViewBuilder
     private func cellView(_ cell: DayCell) -> some View {
         VStack(spacing: 1) {
-            // 角标带：恒留 13px（无角标也占位，行高一致、零重叠）
+            // 角标带：恒留占位高（无角标也占位，行高一致、零重叠）
             HStack {
                 Spacer(minLength: 0)
                 Text(cell.showBadge ?? " ")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: t.badgeFont, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 2)
                     .background(badgeBg(cell))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
             .padding(.trailing, 3)
-            .frame(height: 13, alignment: .top)
+            .frame(height: t.badgeStripHeight, alignment: .top)
             // 公历数字
             Text("\(cal.component(.day, from: cell.date))")
-                .font(.system(size: 13))
+                .font(.system(size: t.numberFont))
                 .foregroundStyle(cell.isToday ? .white : numberColor(cell))
-                .frame(width: 22, height: 22)
+                .frame(width: t.todayCircle, height: t.todayCircle)
                 .background(cell.isToday ? Color.accentColor : .clear)
                 .clipShape(Circle())
                 .overlay(
@@ -232,14 +238,14 @@ public struct CalendarPopoverView: View {
                 )
             // 农历小字（非当月格不显示，避免噪音）
             Text(cell.inMonth ? cell.lunarText : " ")
-                .font(.system(size: 10))
+                .font(.system(size: t.lunarFont))
                 .foregroundStyle(lunarColor(cell))
                 .lineLimit(1)
             // 事件点（系统日历只读整合）
             Circle()
                 .fill(EventProvider.shared.hasEvent(on: cell.date) && cell.inMonth
                       ? Color.accentColor : .clear)
-                .frame(width: 5, height: 5)
+                .frame(width: t.eventDot, height: t.eventDot)
                 .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity)
@@ -299,16 +305,16 @@ public struct CalendarPopoverView: View {
         HStack {
             if countdownEnabled, let next = HolidayStore.nextHoliday(after: Date()) {
                 Text("距 \(next.name) 还有 ")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                + Text("\(next.days)").font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: t.footerFont)).foregroundStyle(.secondary)
+                + Text("\(next.days)").font(.system(size: t.footerFont, weight: .semibold))
                     .foregroundStyle(Color.adaptive(light: 0xD43030, dark: 0xFF6961))
-                + Text(" 天").font(.system(size: 11)).foregroundStyle(.secondary)
+                + Text(" 天").font(.system(size: t.footerFont)).foregroundStyle(.secondary)
             }
             Spacer()
             Button(action: { showSettings = true }) { Image(systemName: "gearshape") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             Button(action: { displayed = Date() }) { Text("回到今天") }
-                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Color.accentColor)
+                .buttonStyle(.plain).font(.system(size: t.footerFont)).foregroundStyle(Color.accentColor)
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
     }

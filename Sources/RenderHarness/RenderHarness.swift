@@ -11,6 +11,10 @@ enum RenderHarnessMain {
         app.setActivationPolicy(.accessory)
 
         let args = CommandLine.arguments
+        // --density=compact|standard|comfortable：渲染指定密度
+        if let flag = args.first(where: { $0.hasPrefix("--density=") }) {
+            UserDefaults.standard.set(String(flag.dropFirst("--density=".count)), forKey: "popoverDensity")
+        }
         // --settings / --onboarding：渲染对应视图；默认渲染月历弹窗
         let store = BirthdayStore()
         let hosting: NSHostingView<AnyView>
