@@ -40,11 +40,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // 状态项形态：0=纯文字 1=图标+文字（默认） 2=纯图标（菜单栏拥挤时兜底）
+        let style = UserDefaults.standard.integer(forKey: "statusItemStyle")
+        statusItem = NSStatusBar.system.statusItem(
+            withLength: style == 2 ? NSStatusItem.squareLength : NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.action = #selector(togglePopover)
             button.target = self
             button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            if style >= 1 {
+                button.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Soluna")
+            }
         }
         updateTitle()
 
@@ -75,6 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateTitle() {
+        guard UserDefaults.standard.integer(forKey: "statusItemStyle") != 2 else {
+            statusItem.button?.title = ""
+            return
+        }
         let now = Date()
         let cal = Calendar(identifier: .gregorian)
         let weekday = ["?","日","一","二","三","四","五","六"][cal.component(.weekday, from: now)]

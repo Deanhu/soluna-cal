@@ -118,19 +118,34 @@ public enum HolidayStore {
             var holiday: Bool
             var name: String?
             var after: Bool?     // true = 调休补班日
+            var target: String?  // 补班归属的假期名（如「国庆节后补班」的 target=「国庆节」）
         }
         var code: Int
         var holiday: [String: Day]?
+    }
+
+    /// 与 tools/gen_holiday_data.py 的 norm_name 保持一致（单一分组规则，两侧同步改）
+    static func normalizeHolidayName(_ raw: String) -> String {
+        var name = raw.replacingOccurrences(of: "调休", with: "")
+            .replacingOccurrences(of: "后补班", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        let springDays: Set<String> = ["除夕", "初一", "初二", "初三", "初四", "初五",
+                                       "初六", "初七", "初八", "初九", "初十"]
+        if springDays.contains(name) { name = "春节" }
+        return name
     }
 
     /// 把 timor.tech 按日条目聚合为我们的 Range 结构
     static func convert(timor t: TimorResponse, year: Int) -> HolidayData {
         var byName: [String: (off: [String], work: [String])] = [:]
         for (md, day) in t.holiday ?? [:] {
-            let name = (day.name ?? "假期").replacingOccurrences(of: "调休", with: "")
-                .trimmingCharacters(in: .whitespaces)
+            let raw: String
+            if day.holiday { raw = day.name ?? "假期" }
+            else if day.after == true { raw = day.target ?? day.name ?? "假期" }
+            else { continue }
+            let name = normalizeHolidayName(raw)
             var e = byName[name, default: ([], [])]
-            if day.holiday { e.off.append(md) } else if day.after == true { e.work.append(md) }
+            if day.holiday { e.off.append(md) } else { e.work.append(md) }
             byName[name] = e
         }
         return HolidayData(year: year, ranges: byName.map {
