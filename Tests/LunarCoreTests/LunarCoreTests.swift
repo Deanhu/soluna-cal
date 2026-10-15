@@ -29,16 +29,44 @@ final class LunarCoreTests: XCTestCase {
         XCTAssertEqual(LunarCalendar.supportedRange, 1900...2099)
     }
 
-    // MARK: 菜单栏标题
+    // MARK: 菜单栏格式 token 拼装
 
-    func testMenuBarTitle() {
+    func testMenuBarFormatDefault() {
         // 2026-10-15 = 周四 = 农历九月初六（独立编译核对）
-        XCTAssertEqual(MenuBarTitle.format(date(2026, 10, 15), showLunar: false), "10月15日 周四")
-        XCTAssertEqual(MenuBarTitle.format(date(2026, 10, 15), showLunar: true),
-                       "10月15日 周四 · 九月初六")
+        let d = date(2026, 10, 15)
+        XCTAssertEqual(MenuBarFormat.render(template: "{M}月{D}日 周{W}", date: d), "10月15日 周四")
+        // 空模板回退默认
+        XCTAssertEqual(MenuBarFormat.render(template: "", date: d), "10月15日 周四")
+    }
+
+    func testMenuBarFormatLunarTokens() {
+        let d = date(2026, 10, 15)
+        XCTAssertEqual(MenuBarFormat.render(template: "{LM}{LD}", date: d), "九月初六")
+        XCTAssertEqual(MenuBarFormat.render(template: "{GY}年{SX}", date: d), "丙午年马")
         // 闰月：2025-07-25 = 闰六月初一（独立编译核对，leap=true）
-        XCTAssertEqual(MenuBarTitle.format(date(2025, 7, 25), showLunar: true),
-                       "7月25日 周五 · 闰六月初一")
+        XCTAssertEqual(MenuBarFormat.render(template: "{LM}{LD}", date: date(2025, 7, 25)), "闰六月初一")
+    }
+
+    func testMenuBarFormatUnknownToken() {
+        // 非法 token 兜底：原样保留，不崩不空白
+        let d = date(2026, 10, 15)
+        XCTAssertEqual(MenuBarFormat.render(template: "{X}/{M}", date: d), "{X}/10")
+        XCTAssertEqual(MenuBarFormat.render(template: "{未闭合", date: d), "{未闭合")
+        XCTAssertEqual(MenuBarFormat.render(template: "{}", date: d), "{}")
+    }
+
+    func testMenuBarFormatWidthEstimate() {
+        // 中文比 ASCII 宽；默认模板远低于预警线
+        XCTAssertGreaterThan(MenuBarFormat.estimatedWidth("九"), MenuBarFormat.estimatedWidth("9"))
+        let d = date(2026, 10, 15)
+        let t = MenuBarFormat.render(template: MenuBarFormat.defaultTemplate, date: d)
+        XCTAssertLessThan(MenuBarFormat.estimatedWidth(t), MenuBarFormat.widthWarningThreshold)
+        // 三档预设都在预警线内
+        for p in MenuBarFormat.presets {
+            let r = MenuBarFormat.render(template: p.template, date: d)
+            XCTAssertLessThan(MenuBarFormat.estimatedWidth(r), MenuBarFormat.widthWarningThreshold,
+                              "预设「\(p.label)」超出长度预警线")
+        }
     }
 
     func testKnownDates() {

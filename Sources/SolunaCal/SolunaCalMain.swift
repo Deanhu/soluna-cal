@@ -92,8 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = ""
             return
         }
-        statusItem.button?.title = MenuBarTitle.format(
-            Date(), showLunar: UserDefaults.standard.bool(forKey: "menuBarLunar"))
+        let ud = UserDefaults.standard
+        // 自定义模板优先；否则一期「显示农历」开关映射到预设（开关被 token 系统吸收）
+        let template = ud.string(forKey: "menuBarTemplate")
+            ?? (ud.bool(forKey: "menuBarLunar")
+                ? MenuBarFormat.presets[1].template : MenuBarFormat.presets[0].template)
+        statusItem.button?.title = MenuBarFormat.render(template: template, date: Date())
     }
 
     private func showOnboarding() {

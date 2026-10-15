@@ -9,6 +9,8 @@ public struct SettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("popoverDensity") private var popoverDensity = PopoverDensity.standard.rawValue
     @AppStorage("menuBarLunar") private var menuBarLunar = false
+    @AppStorage("menuBarTemplate") private var menuBarTemplate: String?
+    @State private var customTemplate = ""
     @State private var newName = ""
     @State private var newMonth = 1
     @State private var newDay = 1
@@ -42,8 +44,43 @@ public struct SettingsView: View {
             Toggle("菜单栏显示农历", isOn: $menuBarLunar)
                 .toggleStyle(.switch).controlSize(.small)
                 .onChange(of: menuBarLunar) {
+                    // 开关是快捷路径：动了开关就清掉自定义模板（最后一次操作生效）
+                    UserDefaults.standard.removeObject(forKey: "menuBarTemplate")
                     NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
                 }
+
+            // 菜单栏格式（二期 token 拼装）：预设 3 档 + 自定义
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("菜单栏格式").font(.callout)
+                    Spacer()
+                    Picker("菜单栏格式", selection: formatChoice) {
+                        Text("简洁").tag(0)
+                        Text("带农历").tag(1)
+                        Text("农历优先").tag(2)
+                        Text("自定义").tag(3)
+                    }
+                    .labelsHidden().pickerStyle(.segmented).frame(width: 240)
+                }
+                if formatChoice.wrappedValue == 3 {
+                    TextField("如 {M}月{D}日 周{W} · {LM}{LD}", text: $customTemplate)
+                        .textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
+                        .onChange(of: customTemplate) {
+                            menuBarTemplate = customTemplate
+                            NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
+                        }
+                    Text("预览：" + MenuBarFormat.render(template: customTemplate, date: Date()))
+                        .font(.caption)
+                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}干支 {SX}生肖")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                    if MenuBarFormat.estimatedWidth(
+                        MenuBarFormat.render(template: customTemplate, date: Date()))
+                        > MenuBarFormat.widthWarningThreshold {
+                        Text("偏长：刘海屏 Mac 的菜单栏可能显示不全")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+                }
+            }
 
             HStack {
                 Text("弹窗密度").font(.callout)
@@ -113,6 +150,11 @@ public struct SettingsView: View {
         .padding(12)
         .frame(width: 360)
         .background(Color(nsColor: .controlBackgroundColor))
+        .onAppear {
+            if customTemplate.isEmpty {
+                customTemplate = menuBarTemplate ?? MenuBarFormat.presets[1].template
+            }
+        }
     }
 
     private func describe(_ e: BirthdayStore.Entry) -> String {
@@ -136,5 +178,29 @@ public struct SettingsView: View {
         case .max: return ""
         default: return "\(days) 天后"
         }
+    }
+
+    /// 菜单栏格式选择：0-2 = 预设（清掉自定义模板并同步农历开关），3 = 自定义
+    private var formatChoice: Binding<Int> {
+        Binding(
+            get: {
+                if let t = menuBarTemplate {
+                    return MenuBarFormat.presets.firstIndex { $0.template == t } ?? 3
+                }
+                return menuBarLunar ? 1 : 0
+            },
+            set: { choice in
+                if choice == 3 {
+                    if customTemplate.isEmpty {
+                        customTemplate = menuBarTemplate ?? MenuBarFormat.presets[1].template
+                    }
+                    menuBarTemplate = customTemplate
+                } else {
+                    menuBarTemplate = nil
+                    menuBarLunar = (choice == 1)
+                }
+                NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
+            }
+        )
     }
 }
