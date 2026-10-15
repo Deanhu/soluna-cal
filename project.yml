@@ -1,0 +1,88 @@
+# SolunaCal Xcode 工程定义
+# 本文件是 .xcodeproj 的唯一真源：改工程结构只改这里，再跑 `xcodegen`。
+# 说明：LunarCore / SolunaUI 以 framework target 直编（与 SwiftPM 共用同一份源码），
+# 不通过 Xcode 的 SwiftPM 集成——本机环境禁止嵌套 sandbox，xcodebuild 无法跑 SwiftPM 解析；
+# 模块边界由命令行 `swift build / swift test`（Package.swift）继续强制保证。
+
+name: SolunaCal
+options:
+  bundleIdPrefix: com.soluna
+  deploymentTarget:
+    macOS: "14.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+
+targets:
+  LunarCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/LunarCore
+    settings:
+      base:
+        PRODUCT_NAME: LunarCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.soluna.lunarcore
+      configs:
+        debug:
+          ENABLE_TESTABILITY: YES
+
+  SolunaUI:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/SolunaUI
+    dependencies:
+      - target: LunarCore
+    settings:
+      base:
+        PRODUCT_NAME: SolunaUI
+        PRODUCT_BUNDLE_IDENTIFIER: com.soluna.solunaui
+
+  SolunaCal:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/SolunaCal
+    dependencies:
+      - target: SolunaUI
+        embed: true
+      - target: LunarCore
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal
+        PRODUCT_NAME: SolunaCal
+        GENERATE_INFOPLIST_FILE: YES
+        # 菜单栏纯配件应用：不出现在 Dock
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "SolunaCal"
+        INFOPLIST_KEY_NSCalendarsUsageDescription: "用于在月历中展示你的日程（只读，不修改日历数据）"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+
+  LunarCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/LunarCoreTests
+    dependencies:
+      - target: LunarCore
+    settings:
+      base:
+        PRODUCT_NAME: LunarCoreTests
+
+schemes:
+  SolunaCal:
+    build:
+      targets:
+        SolunaCal: all
+        LunarCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LunarCoreTests

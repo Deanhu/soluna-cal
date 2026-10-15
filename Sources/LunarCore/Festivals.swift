@@ -50,7 +50,7 @@ public struct HolidayData: Codable {
 public enum HolidayStore {
     public static var calendar = Calendar(identifier: .gregorian)
 
-    /// 内置兜底数据（2026 年，国务院通知为准；发版时更新）
+    /// 内置兜底数据（发版时更新；断网/双源皆挂时用）
     static let bundled: [HolidayData] = [
         HolidayData(year: 2026, ranges: [
             .init(name: "元旦",   off: ["01-01","01-02","01-03"], work: []),
@@ -66,8 +66,20 @@ public enum HolidayStore {
         ]),
     ]
 
-    /// 在线数据 URL（待 Dean 拍板数据源后启用；nil = 只用内置）
-    public static var remoteURL: URL? = nil
+    // MARK: 三级数据源：主源 API → curated 校验 → 内置兜底
+    //
+    // 主源: timor.tech 节假日 API（社区维护，国务院通知后更新快，零运维）
+    // 校验: repo data/holidays.json（人工维护，不直接给用户用，用来对账）
+    // 兜底: bundled（上面）
+    // 对账不一致 → onMismatch 告警（默认 NSLog），不静默信任任何一方
+
+    /// 主源 API 模板，{year} 占位
+    public static var primaryURLTemplate = "https://timor.tech/api/holiday/year/{year}"
+    /// curated 校验源（repo raw URL，人工维护）
+    public static var curatedURL: URL? = URL(string:
+        "https://raw.githubusercontent.com/Deanhu/soluna-cal/main/data/holidays.json")
+    /// 对账不一致回调（测试可注入）
+    public static var onMismatch: (String) -> Void = { NSLog("[SolunaCal] 调休数据对账不一致: %@", $0) }
 
     static var cacheDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -95,18 +107,77 @@ public enum HolidayStore {
         return bundled.first { $0.year == year } ?? HolidayData(year: year, ranges: [])
     }
 
-    /// 启动后后台拉取在线数据（成功则覆盖缓存）
+    // MARK: 主源拉取 + 对账
+
+    /// timor.tech 响应格式（internal 以便测试直接驱动 convert）
+    struct TimorResponse: Codable {
+        struct Day: Codable {
+            var holiday: Bool
+            var name: String?
+            var after: Bool?     // true = 调休补班日
+        }
+        var code: Int
+        var holiday: [String: Day]?
+    }
+
+    /// 把 timor.tech 按日条目聚合为我们的 Range 结构
+    static func convert(timor t: TimorResponse, year: Int) -> HolidayData {
+        var byName: [String: (off: [String], work: [String])] = [:]
+        for (md, day) in t.holiday ?? [:] {
+            let name = (day.name ?? "假期").replacingOccurrences(of: "调休", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            var e = byName[name, default: ([], [])]
+            if day.holiday { e.off.append(md) } else if day.after == true { e.work.append(md) }
+            byName[name] = e
+        }
+        return HolidayData(year: year, ranges: byName.map {
+            HolidayData.Range(name: $0.key, off: $0.value.off.sorted(), work: $0.value.work.sorted())
+        })
+    }
+
+    /// 启动后后台拉取：主源 → 缓存；再拉 curated 对账
     public static func refreshInBackground() {
-        guard let url = remoteURL else { return }
+        let years = [calendar.component(.year, from: Date()),
+                     calendar.component(.year, from: Date()) + 1]
+        for y in years { refreshYear(y) }
+        reconcileInBackground()
+    }
+
+    private static func refreshYear(_ year: Int) {
+        guard let url = URL(string: primaryURLTemplate.replacingOccurrences(of: "{year}", with: "\(year)")) else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data,
-                  let list = try? JSONDecoder().decode([HolidayData].self, from: data) else { return }
+                  let resp = try? JSONDecoder().decode(TimorResponse.self, from: data),
+                  resp.code == 0 else { return }
+            let hd = convert(timor: resp, year: year)
+            guard !hd.ranges.isEmpty else { return }
             try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-            for hd in list {
-                try? JSONEncoder().encode(hd)
-                    .write(to: cacheDir.appendingPathComponent("holidays-\(hd.year).json"))
+            try? JSONEncoder().encode(hd)
+                .write(to: cacheDir.appendingPathComponent("holidays-\(year).json"))
+        }.resume()
+    }
+
+    /// 对账：主源缓存 vs curated 校验源；不一致触发告警，不改变用户数据
+    static func reconcileInBackground() {
+        guard let url = curatedURL else { return }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data,
+                  let curated = try? JSONDecoder().decode([HolidayData].self, from: data) else { return }
+            for c in curated {
+                let primary = load(year: c.year)
+                guard !primary.ranges.isEmpty else { continue }
+                if fingerprint(primary) != fingerprint(c) {
+                    onMismatch("year=\(c.year) 主源与 curated 不一致（主源 \(primary.ranges.count) 段 / curated \(c.ranges.count) 段）")
+                }
             }
         }.resume()
+    }
+
+    /// 对账指纹：只看 off/work 日期集合（名字措辞差异不算不一致）
+    static func fingerprint(_ hd: HolidayData) -> String {
+        let off = hd.ranges.flatMap { $0.off }.sorted().joined()
+        let work = hd.ranges.flatMap { $0.work }.sorted().joined()
+        return off + "|" + work
     }
 
     /// 距下一个法定假（名称, 日期, 天数）
