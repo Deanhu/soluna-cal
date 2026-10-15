@@ -16,7 +16,16 @@ enum RenderHarnessMain {
             UserDefaults.standard.set(String(flag.dropFirst("--density=".count)), forKey: "popoverDensity")
         }
         // --settings / --onboarding：渲染对应视图；默认渲染月历弹窗
-        let store = BirthdayStore()
+        // --demo-birthdays：用纯内存示例数据（不碰真实 UserDefaults / iCloud）
+        let store: BirthdayStore
+        if args.contains("--demo-birthdays") {
+            store = BirthdayStore(persists: false)
+            store.add(.init(name: "妈妈", lunarMonth: 9, lunarDay: 19))   // 近：约 4 天后（红）
+            store.add(.init(name: "爸爸", lunarMonth: 3, lunarDay: 6))    // 远：明春
+            store.add(.init(name: "纪念日", lunarMonth: 10, lunarDay: 20, calendar: .solar)) // 5 天后
+        } else {
+            store = BirthdayStore()
+        }
         let hosting: NSHostingView<AnyView>
         if args.contains("--settings") {
             hosting = NSHostingView(rootView: AnyView(SettingsView(store: store)))

@@ -56,4 +56,38 @@ final class BirthdayStoreTests: XCTestCase {
         XCTAssertEqual(entries[0].calendar, .lunar)
         XCTAssertEqual(entries[0].cycle, .yearly)
     }
+
+    // MARK: nextOccurrence（生日看板倒数）
+
+    func testNextOccurrenceToday() {
+        // 2026-10-10 = 农历九月初一；当天命中 → 0 天
+        store.add(.init(name: "甲", lunarMonth: 9, lunarDay: 1))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2026, 10, 10))
+        XCTAssertEqual(r?.days, 0)
+        XCTAssertEqual(r?.date, date(2026, 10, 10))
+    }
+
+    func testNextOccurrenceFutureLunar() {
+        // 2026-10-11 = 农历九月初二；条目九月初三 → 1 天后（2026-10-12）
+        store.add(.init(name: "乙", lunarMonth: 9, lunarDay: 3))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2026, 10, 11))
+        XCTAssertEqual(r?.days, 1)
+        XCTAssertEqual(r?.date, date(2026, 10, 12))
+    }
+
+    func testNextOccurrenceSolarYearly() {
+        // 公历 1 月 1 日：2026-10-15 起算 → 2027-01-01，共 78 天
+        store.add(.init(name: "丙", lunarMonth: 1, lunarDay: 1, calendar: .solar))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2026, 10, 15))
+        XCTAssertEqual(r?.date, date(2027, 1, 1))
+        XCTAssertEqual(r?.days, 78)
+    }
+
+    func testNextOccurrenceMonthly() {
+        // 每月农历初一：2026-10-15（九月初六）起算 → 十月初一 = 2026-11-09，25 天
+        store.add(.init(name: "丁", lunarMonth: 6, lunarDay: 1, cycle: .monthly))
+        let r = store.nextOccurrence(of: store.entries[0], from: date(2026, 10, 15))
+        XCTAssertEqual(r?.date, date(2026, 11, 9))
+        XCTAssertEqual(r?.days, 25)
+    }
 }

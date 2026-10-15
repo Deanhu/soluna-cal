@@ -60,24 +60,41 @@ public final class BirthdayStore: ObservableObject {
     public func add(_ e: Entry) { entries.append(e); save() }
     public func remove(_ e: Entry) { entries.removeAll { $0.id == e.id }; save() }
 
-    /// 命中检查：该公历日是否命中某条目（按条目自身的历法与周期）
-    public func match(date: Date, lunar: LunarDate) -> Entry? {
+    /// 某条目下次出现的公历日期与距今天数（0 = 今天）。
+    /// 农历年周期最长约 384 天（闰月年），扫 400 天必命中。
+    public func nextOccurrence(of entry: Entry,
+                               from: Date = Date()) -> (date: Date, days: Int)? {
+        let gcal = Calendar(identifier: .gregorian)
+        let start = gcal.startOfDay(for: from)
+        for offset in 0..<400 {
+            guard let d = gcal.date(byAdding: .day, value: offset, to: start) else { continue }
+            let lunar = LunarCalendar.lunarDate(from: d)
+            if matchEntry(entry, date: d, lunar: lunar) { return (d, offset) }
+        }
+        return nil
+    }
+
+    /// 单条目命中判定（match 的逐条目版，供 nextOccurrence 复用同一规则）
+    private func matchEntry(_ e: Entry, date: Date, lunar: LunarDate) -> Bool {
         let gcal = Calendar(identifier: .gregorian)
         let sm = gcal.component(.month, from: date)
         let sd = gcal.component(.day, from: date)
-        return entries.first { e in
-            switch (e.calendar, e.cycle) {
-            case (.lunar, .yearly):
-                return e.lunarMonth == lunar.month && e.lunarDay == lunar.day &&
-                       (e.isLeapMonth == lunar.isLeapMonth || !e.isLeapMonth)
-            case (.lunar, .monthly):
-                return e.lunarDay == lunar.day
-            case (.solar, .yearly):
-                return e.lunarMonth == sm && e.lunarDay == sd
-            case (.solar, .monthly):
-                return e.lunarDay == sd
-            }
+        switch (e.calendar, e.cycle) {
+        case (.lunar, .yearly):
+            return e.lunarMonth == lunar.month && e.lunarDay == lunar.day &&
+                   (e.isLeapMonth == lunar.isLeapMonth || !e.isLeapMonth)
+        case (.lunar, .monthly):
+            return e.lunarDay == lunar.day
+        case (.solar, .yearly):
+            return e.lunarMonth == sm && e.lunarDay == sd
+        case (.solar, .monthly):
+            return e.lunarDay == sd
         }
+    }
+
+    /// 命中检查：该公历日是否命中某条目（按条目自身的历法与周期）
+    public func match(date: Date, lunar: LunarDate) -> Entry? {
+        entries.first { matchEntry($0, date: date, lunar: lunar) }
     }
 
     private func load() {

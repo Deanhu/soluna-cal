@@ -13,12 +13,22 @@ public struct SettingsView: View {
     @State private var newDay = 1
     @State private var newKind: BirthdayStore.Entry.CalendarKind = .lunar
     @State private var newCycle: BirthdayStore.Entry.Cycle = .yearly
+    @Environment(\.dismiss) private var dismiss
 
     public init(store: BirthdayStore) { self.store = store }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("设置").font(.headline)
+            HStack {
+                Text("设置").font(.headline)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("关闭")
+            }
 
             Toggle("显示宜忌（黄历）", isOn: $yijiEnabled)
                 .toggleStyle(.switch).controlSize(.small)
@@ -76,13 +86,18 @@ public struct SettingsView: View {
             }
 
             if !store.entries.isEmpty {
-                ForEach(store.entries) { e in
+                ForEach(sortedEntries, id: \.entry.id) { item in
                     HStack {
-                        Text(e.name)
+                        Text(item.entry.name)
                         Spacer()
-                        Text(describe(e))
+                        Text(describe(item.entry))
                             .foregroundStyle(.secondary).font(.caption)
-                        Button("删") { store.remove(e) }
+                        Text(countdownText(item.days))
+                            .font(.caption)
+                            .foregroundStyle(item.days <= 7
+                                ? Color.adaptive(light: 0xD43030, dark: 0xFF6961)
+                                : Color.secondary)
+                        Button("删") { store.remove(item.entry) }
                             .buttonStyle(.plain).foregroundStyle(.red).font(.caption)
                     }
                 }
@@ -90,6 +105,7 @@ public struct SettingsView: View {
         }
         .padding(12)
         .frame(width: 360)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private func describe(_ e: BirthdayStore.Entry) -> String {
@@ -97,5 +113,21 @@ public struct SettingsView: View {
             ? "农历\(LunarDate.monthName(e.lunarMonth))月\(LunarDate.dayName(e.lunarDay))"
             : "公历\(e.lunarMonth)月\(e.lunarDay)日"
         return e.cycle == .yearly ? md : "每月" + (e.calendar == .lunar ? LunarDate.dayName(e.lunarDay) : "\(e.lunarDay)日")
+    }
+
+    /// 生日看板：按下次出现从近到远排序（nextOccurrence 为空的排最后）
+    private var sortedEntries: [(entry: BirthdayStore.Entry, days: Int)] {
+        store.entries
+            .map { ($0, store.nextOccurrence(of: $0)?.days ?? .max) }
+            .sorted { $0.1 < $1.1 }
+    }
+
+    private func countdownText(_ days: Int) -> String {
+        switch days {
+        case 0: return "今天"
+        case 1: return "明天"
+        case .max: return ""
+        default: return "\(days) 天后"
+        }
     }
 }
