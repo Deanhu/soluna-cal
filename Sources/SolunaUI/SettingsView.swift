@@ -85,7 +85,7 @@ public struct SettingsView: View {
                         }
                     Text("预览：" + MenuBarFormat.render(template: customTemplate, date: Date()))
                         .font(.caption)
-                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}干支 {SX}生肖")
+                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支")
                         .font(.caption2).foregroundStyle(.tertiary)
                     if MenuBarFormat.estimatedWidth(
                         MenuBarFormat.render(template: customTemplate, date: Date()))
@@ -285,8 +285,10 @@ public struct SettingsView: View {
                     }
                     menuBarTemplate = customTemplate
                 } else {
-                    menuBarTemplate = nil
-                    menuBarLunar = (choice == 1)
+                    // 预设直接落模板（不走 menuBarLunar 遗留开关），
+                    // 否则「农历优先」(choice 2) 会写成 template=nil+lunar=false → 实际渲染成简洁
+                    menuBarTemplate = MenuBarFormat.presets[choice].template
+                    menuBarLunar = (choice >= 1)
                 }
                 NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
             }

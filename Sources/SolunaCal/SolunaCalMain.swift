@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.onTrigger = { [weak self] in self?.togglePopover() }
         HotKeyManager.shared.register(HotKeyManager.saved)
 
-        // 通知：启动时全量重排 + 每日 03:30 重排（幂等）
+        // 通知：启动时全量重排 + 每小时检查、落在凌晨 3 点的那次 tick 重排（幂等）
         NotificationManager.reschedule(store: store)
         Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
             let c = Calendar(identifier: .gregorian)
