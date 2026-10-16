@@ -61,7 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
             button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
             if style >= 1 {
-                button.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Soluna")
+                // 自定义菜单栏模板图标（日历+弦月）；模板渲染自动适配深浅菜单栏
+                let img = NSImage(named: "MenuBarIcon")
+                img?.isTemplate = true
+                if let img { img.accessibilityDescription = "Soluna" }
+                button.image = img ?? NSImage(systemSymbolName: "calendar", accessibilityDescription: "Soluna")
             }
         }
         updateTitle()

@@ -68,6 +68,8 @@ targets:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
         GENERATE_INFOPLIST_FILE: YES
+        # 应用图标（Sources/SolunaCal/Assets.xcassets/AppIcon）
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # 菜单栏纯配件应用：不出现在 Dock
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "SolunaCal"
