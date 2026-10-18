@@ -40,6 +40,7 @@ final class LunarCoreTests: XCTestCase {
     }
 
     func testMenuBarFormatLunarTokens() {
+        // PROVENANCE: lunar-python 1.4.8 核对 2026-10-15=九月初六、2025-07-25=闰六月初一、2026 年干支丙午/生肖马
         let d = date(2026, 10, 15)
         XCTAssertEqual(MenuBarFormat.render(template: "{LM}{LD}", date: d), "九月初六")
         XCTAssertEqual(MenuBarFormat.render(template: "{GY}年{SX}", date: d), "丙午年马")
@@ -112,6 +113,7 @@ final class LunarCoreTests: XCTestCase {
     // MARK: 干支
 
     func testGanzhi() {
+        // PROVENANCE: lunar-python 1.4.8 核对 1984-06-01 年干支=甲子（60 甲子基准）、2026=丙午、生肖马
         XCTAssertEqual(Ganzhi.year(2026), "丙午")
         XCTAssertEqual(Ganzhi.animal(2026), "马")
         XCTAssertEqual(Ganzhi.year(1984), "甲子")

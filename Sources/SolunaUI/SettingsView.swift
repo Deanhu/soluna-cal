@@ -85,7 +85,7 @@ public struct SettingsView: View {
                         }
                     Text("预览：" + MenuBarFormat.render(template: customTemplate, date: Date()))
                         .font(.caption)
-                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支")
+                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支 {SH}时辰 {SG}时干支")
                         .font(.caption2).foregroundStyle(.tertiary)
                     if MenuBarFormat.estimatedWidth(
                         MenuBarFormat.render(template: customTemplate, date: Date()))

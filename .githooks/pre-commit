@@ -1,0 +1,18 @@
+#!/bin/sh
+# 提交前守卫：测试里出现历法事实（干支 / 节气 / 农历日 / 时辰）的断言，
+# 必须在同一测试函数里写明来源（// PROVENANCE: <可复算的方法>）。
+#
+# 只依赖 python3 标准库，不依赖 lunar-python，所以协作者无需额外装东西也能过。
+# 启用：git config core.hooksPath .githooks
+
+set -e
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+PY=$(command -v python3 || true)
+if [ -z "$PY" ]; then
+    echo "pre-commit: 找不到 python3，跳过断言来源检查（请自行确认断言来源）"
+    exit 0
+fi
+
+"$PY" tools/check_assertion_provenance.py

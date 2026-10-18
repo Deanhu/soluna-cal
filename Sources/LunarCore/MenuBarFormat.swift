@@ -1,7 +1,8 @@
 import Foundation
 
 /// 菜单栏格式 token 拼装引擎（二期 V2-1）
-/// token：{Y}年 {M}月 {D}日 {W}周几 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支
+/// token：{Y}年 {M}月 {D}日 {W}周几 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖
+/// {GD}日干支 {SH}时辰 {SG}时干支（{SH}/{SG} 随系统时间每小时变化）
 /// 非法 token 原样保留（不崩不空白）；空模板回退默认。
 public enum MenuBarFormat {
     public static let defaultTemplate = "{M}月{D}日 周{W}"
@@ -64,6 +65,8 @@ public enum MenuBarFormat {
             guard let l = lunar else { return "" }
             return Ganzhi.animal(l.year)
         case "GD": return Ganzhi.day(date)   // 日干支（锚点法，不依赖农历表范围）
+        case "SH": return Shichen.of(date: date).name     // 时辰（如「午时」）
+        case "SG": return Shichen.of(date: date).ganzhi   // 时干支（如「丙午」）
         default: return nil
         }
     }

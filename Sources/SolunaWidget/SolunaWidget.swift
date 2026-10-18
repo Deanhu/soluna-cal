@@ -48,14 +48,14 @@ struct MonthWidgetView: View {
                 }
             }
             LazyVGrid(columns: columns, spacing: 1) {
-                ForEach(monthCells(), id: \.self) { cell in
-                    Text(cell.text)
+                ForEach(cells, id: \.id) { cell in
+                    Text(label(for: cell))
                         .font(.system(size: family == .systemLarge ? 11 : 9,
                                       weight: cell.isToday ? .bold : .regular))
                         .foregroundStyle(cell.isToday ? .white :
                                             (cell.inMonth ? .primary : Color(.tertiaryLabelColor)))
                         .frame(maxWidth: .infinity, minHeight: family == .systemLarge ? 24 : 16)
-                        .background(cell.isToday ? Color.accentColor : cell.bandColor)
+                        .background(cell.isToday ? Color.accentColor : bandColor(cell))
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
@@ -63,40 +63,20 @@ struct MonthWidgetView: View {
         .padding(family == .systemLarge ? 12 : 8)
     }
 
-    private struct Cell: Hashable {
-        let id: Int
-        let text: String
-        let isToday: Bool
-        let inMonth: Bool
-        let bandColor: Color
+    /// 网格语义与弹窗同源（LunarCore.MonthGrid），这里只决定怎么画
+    private var cells: [MonthGrid.Day] { MonthGrid.build(month: entry.date) }
+
+    private func label(for cell: MonthGrid.Day) -> String {
+        // 大尺寸：节日名优先；其余显示公历日
+        if family == .systemLarge, cell.inMonth, cell.tone == .festival {
+            return cell.lunarText
+        }
+        return "\(cal.component(.day, from: cell.date))"
     }
 
-    private func monthCells() -> [Cell] {
-        let comps = cal.dateComponents([.year, .month], from: entry.date)
-        let first = cal.date(from: comps)!
-        let firstWeekday = (cal.component(.weekday, from: first) + 5) % 7
-        let start = cal.date(byAdding: .day, value: -firstWeekday, to: first)!
-        let today = cal.startOfDay(for: Date())
-        return (0..<42).map { i in
-            let d = cal.date(byAdding: .day, value: i, to: start)!
-            let inMonth = cal.component(.month, from: d) == comps.month
-            var text = "\(cal.component(.day, from: d))"
-            if family == .systemLarge, inMonth,
-               let lunar = LunarCalendar.lunarDateOrNil(from: d) {
-                if let f = Festival.lunarFestival(of: lunar)
-                    ?? Festival.solarFestival(month: comps.month ?? 0,
-                                              day: cal.component(.day, from: d)) {
-                    text = f
-                } else if lunar.day == 1 {
-                    text = LunarDate.monthName(lunar.month) + "月"
-                }
-            }
-            var band = Color.clear
-            if case .off = HolidayStore.status(on: d) { band = Color.red.opacity(0.12) }
-            return Cell(id: i, text: text,
-                        isToday: cal.startOfDay(for: d) == today,
-                        inMonth: inMonth, bandColor: band)
-        }
+    private func bandColor(_ cell: MonthGrid.Day) -> Color {
+        if case .off = cell.status { return Color.red.opacity(0.12) }
+        return .clear
     }
 }
 

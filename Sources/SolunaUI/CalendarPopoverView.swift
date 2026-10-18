@@ -121,93 +121,14 @@ public struct CalendarPopoverView: View {
 
     // MARK: 月历网格
 
-    /// 一天在网格里的呈现模型
-    private struct DayCell: Identifiable {
-        let id = UUID()
-        let date: Date
-        let inMonth: Bool
-        let isToday: Bool
-        let status: DayStatus
-        let lunarText: String
-        let lunarColor: CellTextColor
-        let bandRole: BandRole     // 假期色带的角色
-        let showBadge: String?     // "休" / "班" / nil
-
-        enum CellTextColor { case normal, festival, term, faint }
-        enum BandRole { case none, single, start, middle, end }
-    }
+    /// 网格语义来自 LunarCore.MonthGrid —— 弹窗与小组件共用同一份单元格计算
+    private typealias DayCell = MonthGrid.Day
 
     private var monthCells: [DayCell] {
-        // 周一起始，6 行 42 格
-        let comps = cal.dateComponents([.year, .month], from: displayed)
-        let first = cal.date(from: comps)!
-        let firstWeekday = (cal.component(.weekday, from: first) + 5) % 7  // 周一=0
-        let start = cal.date(byAdding: .day, value: -firstWeekday, to: first)!
-        let today = cal.startOfDay(for: Date())
-
-        var cells: [DayCell] = (0..<42).map { i in
-            let d = cal.date(byAdding: .day, value: i, to: start)!
-            let inMonth = cal.component(.month, from: d) == comps.month
-            // 翻页边界格可能超出历法数据范围：安全版返回 nil → 农历位空白，不崩溃
-            guard let lunar = LunarCalendar.lunarDateOrNil(from: d) else {
-                return DayCell(date: d, inMonth: inMonth,
-                               isToday: cal.startOfDay(for: d) == today,
-                               status: .normal, lunarText: " ", lunarColor: .faint,
-                               bandRole: .none, showBadge: nil)
-            }
-            let status = HolidayStore.status(on: d)
-
-            // 农历小字：节日 > 节气 > 初一 > 日
-            var text = LunarDate.dayName(lunar.day)
-            var color = DayCell.CellTextColor.normal
-            if let f = Festival.solarFestival(month: cal.component(.month, from: d),
-                                              day: cal.component(.day, from: d)) {
-                text = f; color = .festival
-            } else if let f = Festival.lunarFestival(of: lunar) {
-                text = f; color = .festival
-            } else if let t = SolarTerm.on(date: d, calendar: cal) {
-                text = t.description; color = .term
-            } else if lunar.day == 1 {
-                text = (lunar.isLeapMonth ? "闰" : "") + LunarDate.monthName(lunar.month) + "月"
-            }
-            // 生日优先于初一月份名（「妈妈的生日」比「冬月初一」对用户更重要）
-            if let b = store.match(date: d, lunar: lunar) {
-                text = b.name.count <= 2 ? b.name : "生日"; color = inMonth ? .festival : .faint
-            }
-            if !inMonth { color = .faint }
-
-            return DayCell(date: d, inMonth: inMonth,
-                           isToday: cal.startOfDay(for: d) == today,
-                           status: status, lunarText: text, lunarColor: color,
-                           bandRole: .none, showBadge: nil)
+        MonthGrid.build(month: displayed, calendar: cal) { d, lunar in
+            guard let b = store.match(date: d, lunar: lunar) else { return nil }
+            return b.name.count <= 2 ? b.name : "生日"
         }
-
-        // 假期色带：连续 off 分段，行内断行处分段；段首格给「休」角标
-        var i = 0
-        while i < cells.count {
-            guard case .off = cells[i].status else { i += 1; continue }
-            var j = i
-            while j + 1 < cells.count, case .off = cells[j + 1].status, (j + 1) % 7 != 0 { j += 1 }
-            for k in i...j {
-                let role: DayCell.BandRole =
-                    (i == j) ? .single : (k == i ? .start : (k == j ? .end : .middle))
-                cells[k] = DayCell(date: cells[k].date, inMonth: cells[k].inMonth,
-                                   isToday: cells[k].isToday, status: cells[k].status,
-                                   lunarText: cells[k].lunarText, lunarColor: cells[k].lunarColor,
-                                   bandRole: role, showBadge: k == i ? "休" : nil)
-            }
-            i = j + 1
-        }
-        // 补班角标
-        for k in cells.indices {
-            if case .work = cells[k].status {
-                cells[k] = DayCell(date: cells[k].date, inMonth: cells[k].inMonth,
-                                   isToday: cells[k].isToday, status: cells[k].status,
-                                   lunarText: cells[k].lunarText, lunarColor: cells[k].lunarColor,
-                                   bandRole: .single, showBadge: "班")
-            }
-        }
-        return cells
     }
 
     private var monthGrid: some View {
@@ -303,7 +224,7 @@ public struct CalendarPopoverView: View {
             // 角标带：恒留占位高（无角标也占位，行高一致、零重叠）
             HStack {
                 Spacer(minLength: 0)
-                Text(cell.showBadge ?? " ")
+                Text(cell.badge ?? " ")
                     .font(.system(size: t.badgeFont, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 2)
@@ -354,19 +275,19 @@ public struct CalendarPopoverView: View {
     }
 
     private func badgeBg(_ cell: DayCell) -> Color {
-        guard let b = cell.showBadge else { return .clear }
+        guard let b = cell.badge else { return .clear }
         return b == "休" ? skin.badgeOff : skin.badgeWork
     }
 
     private func numberColor(_ cell: DayCell) -> Color {
         if !cell.inMonth { return .adaptive(light: 0xC7C7CC, dark: 0x545456) }
         if case .off = cell.status { return skin.holidayNumber }
-        if cell.lunarColor == .festival { return .primary }
+        if cell.tone == .festival { return .primary }
         return .primary
     }
 
     private func lunarColor(_ cell: DayCell) -> Color {
-        switch cell.lunarColor {
+        switch cell.tone {
         case .festival: return skin.festivalText
         case .term:     return skin.termText
         case .faint:    return .adaptive(light: 0xC7C7CC, dark: 0x545456)

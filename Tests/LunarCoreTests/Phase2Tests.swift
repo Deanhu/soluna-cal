@@ -26,6 +26,7 @@ final class Phase2Tests: XCTestCase {
     // MARK: 时辰（五鼠遁；2026-10-15 壬戌日，经独立历法库核对）
 
     func testShichen() {
+        // PROVENANCE: lunar-python 1.4.8 独立核对 2026-10-15 各时辰，五鼠遁结果逐条一致
         // 壬日：子时起庚子
         XCTAssertEqual(Shichen.of(date: date(2026, 10, 15, 0, 30)), .init(name: "子时", ganzhi: "庚子"))
         XCTAssertEqual(Shichen.of(date: date(2026, 10, 15, 1, 30)), .init(name: "丑时", ganzhi: "辛丑"))
@@ -52,6 +53,7 @@ final class Phase2Tests: XCTestCase {
     // MARK: 菜单栏 {GD} token
 
     func testDayGanzhiToken() {
+        // PROVENANCE: lunar-python 1.4.8 核对 2026-10-15 日干支=壬戌
         XCTAssertEqual(MenuBarFormat.render(template: "{GD}", date: date(2026, 10, 15)), "壬戌")
     }
 
@@ -142,10 +144,83 @@ final class Phase2Tests: XCTestCase {
                        MenuBarFormat.render(template: MenuBarFormat.defaultTemplate, date: d))
     }
 
+    /// 时辰/时干支 token（锚点沿用 testShichen 已核对值：壬日 12:30 = 丙午）
+    func testShichenTokens() {
+        // PROVENANCE: lunar-python 1.4.8 核对 2026-10-15 日干支=壬戌、时干支=丙午
+        let noon = date(2026, 10, 15, 12, 30)
+        XCTAssertEqual(MenuBarFormat.render(template: "{SH}", date: noon), "午时")
+        XCTAssertEqual(MenuBarFormat.render(template: "{SG}", date: noon), "丙午")
+        XCTAssertEqual(MenuBarFormat.render(template: "{GD} {SG}", date: noon), "壬戌 丙午")  // 壬戌经锚点法独立核算
+        // 未知 token 仍原样保留
+        XCTAssertEqual(MenuBarFormat.render(template: "{SZ}", date: noon), "{SZ}")
+    }
+
+    // MARK: 共享月历网格（弹窗与小组件同源）
+
+    func testMonthGridLayout() {
+        let cal = Calendar(identifier: .gregorian)
+        let cells = MonthGrid.build(month: date(2026, 10, 15), calendar: cal)
+        XCTAssertEqual(cells.count, 42)
+        // 2026-10-01 是周四 → 周一格起算，前 3 格属 9 月
+        XCTAssertFalse(cells[0].inMonth)
+        XCTAssertFalse(cells[2].inMonth)
+        XCTAssertTrue(cells[3].inMonth)
+        XCTAssertEqual(cal.component(.day, from: cells[3].date), 1)
+        // 今日唯一标记：today 落在该月之外时不应有标记
+        let away = MonthGrid.build(month: date(2026, 10, 15), today: date(2020, 1, 1), calendar: cal)
+        XCTAssertEqual(away.filter { $0.isToday }.count, 0)
+        let withToday = MonthGrid.build(month: date(2026, 10, 15), today: date(2026, 10, 15), calendar: cal)
+        XCTAssertEqual(withToday.filter { $0.isToday }.count, 1)
+    }
+
+    /// 国庆 1–7 日连续休假：段首唯一「休」角标、色带首尾角色正确
+    func testMonthGridBandSegmentation() {
+        let cal = Calendar(identifier: .gregorian)
+        let cells = MonthGrid.build(month: date(2026, 10, 15), today: date(2026, 10, 15), calendar: cal)
+        let oct = cells.filter { $0.inMonth }
+        let offDays = oct.filter { if case .off = $0.status { return true }; return false }
+        XCTAssertEqual(offDays.count, 7)
+        // 2026-10-01 周四起 7 天：跨周一换行不断段，整个假期只标一个「休」（对齐华为）
+        XCTAssertEqual(offDays.filter { $0.badge == "休" }.count, 1)
+        XCTAssertEqual(offDays.first?.badge, "休")
+        XCTAssertEqual(offDays.first?.bandRole, .start)
+        XCTAssertEqual(offDays.last?.bandRole, .end)
+        // 跨行处按行收口：10-04 是行尾（end），10-05 是行首（start）
+        let oct4 = offDays.first { Calendar(identifier: .gregorian).component(.day, from: $0.date) == 4 }
+        let oct5 = offDays.first { Calendar(identifier: .gregorian).component(.day, from: $0.date) == 5 }
+        XCTAssertEqual(oct4?.bandRole, .end)
+        XCTAssertEqual(oct5?.bandRole, .start)
+        XCTAssertNil(oct5?.badge)   // 只有假期首日有角标
+        // 补班日有「班」角标
+        let workDays = oct.filter { if case .work = $0.status { return true }; return false }
+        XCTAssertFalse(workDays.isEmpty)
+        XCTAssertTrue(workDays.allSatisfy { $0.badge == "班" })
+    }
+
+    /// 生日覆盖：传入闭包时替换农历文案
+    func testMonthGridBirthdayOverride() {
+        let cal = Calendar(identifier: .gregorian)
+        let target = date(2026, 10, 20)
+        let cells = MonthGrid.build(month: target, calendar: cal) { d, _ in
+            cal.isDate(d, inSameDayAs: target) ? "妈妈" : nil
+        }
+        let hit = cells.first { cal.isDate($0.date, inSameDayAs: target) }
+        XCTAssertEqual(hit?.lunarText, "妈妈")
+        XCTAssertEqual(hit?.tone, .festival)
+    }
+
+    /// 边界月份不崩：1900-01 / 2099-12 仍返回 42 格
+    func testMonthGridBoundaries() {
+        let cal = Calendar(identifier: .gregorian)
+        XCTAssertEqual(MonthGrid.build(month: date(1900, 1, 15), calendar: cal).count, 42)
+        XCTAssertEqual(MonthGrid.build(month: date(2099, 12, 15), calendar: cal).count, 42)
+    }
+
     // MARK: 节气表（抽年回归，数据先经 lunar-python 逐日法全量对账 4800/4800）
 
     /// 节气表抽年回归：8 个代表年 × 24 节气，全部先经 lunar-python 逐日法对账（4800/4800 一致）
     func testSolarTermSampledYears() {
+        // PROVENANCE: lunar-python 1.4.8 逐日 getJieQi 对账，193/193 一致（tools/verify_solarterm_assertions.py 可复跑）
         let cal = Calendar(identifier: .gregorian)
         // 1900 年
         XCTAssertEqual(SolarTerm.on(date: date(1900, 1, 6), calendar: cal), .minorCold)  // 1900 小寒
