@@ -41,6 +41,8 @@ enum RenderHarnessMain {
         if args.contains("--ganzhi") {
             flags["ganzhiEnabled"] = true
         }
+        // --yiji：开启宜忌行（底部区域自查，用户反馈里常带这一行）
+        flags["yijiEnabled"] = args.contains("--yiji")
         // 清完残留后把本 harness 管理的 key 全量显式写入（含默认值），保证单次运行自洽
         for (key, value) in flags { UserDefaults.standard.set(value, forKey: key) }
         // --select=YYYY-MM-DD：预选某日（渲染选中日区域：日程列表/干支行）

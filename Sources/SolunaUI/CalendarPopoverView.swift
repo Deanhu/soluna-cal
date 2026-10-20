@@ -52,9 +52,9 @@ public struct CalendarPopoverView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8).padding(.top, 3)
+                    .padding(.horizontal, 8).padding(.top, 8)
             }
-            Divider().padding(.top, 2)
+            Divider().padding(.top, 4)
             footer
         }
         .frame(width: t.popoverWidth)
@@ -89,7 +89,7 @@ public struct CalendarPopoverView: View {
             Button(action: { shiftMonth(1) }) { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
+        .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
     }
 
     private var monthTitle: String {
@@ -221,19 +221,7 @@ public struct CalendarPopoverView: View {
     @ViewBuilder
     private func cellView(_ cell: DayCell) -> some View {
         VStack(spacing: 1) {
-            // 角标带：恒留占位高（无角标也占位，行高一致、零重叠）
-            HStack {
-                Spacer(minLength: 0)
-                Text(cell.badge ?? " ")
-                    .font(.system(size: t.badgeFont, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 2)
-                    .background(badgeBg(cell))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-            .padding(.trailing, 3)
-            .frame(height: t.badgeStripHeight, alignment: .top)
-            // 公历数字
+            // 公历数字（角标贴在这个圆的右上角，不再单独占一条 13pt 空间）
             Text("\(cal.component(.day, from: cell.date))")
                 .font(.system(size: t.numberFont))
                 .foregroundStyle(cell.isToday ? .white : numberColor(cell))
@@ -249,14 +237,21 @@ public struct CalendarPopoverView: View {
                 .font(.system(size: t.lunarFont))
                 .foregroundStyle(lunarColor(cell))
                 .lineLimit(1)
-            // 事件点（系统日历只读整合）
+        }
+        // 角标位：只留半个条带高（原先是整条 13pt，行间因此显出大片空白）
+        .padding(.top, t.badgeStripHeight * 0.5)
+        .frame(maxWidth: .infinity)
+        .background(bandBg(cell))
+        // 角标叠在预留位右上角：落在色带内，也不压到上一行
+        .overlay(alignment: .topTrailing) { badgeTag(cell) }
+        // 事件点浮在行间空隙里，不占一行高（没有日程时那里本来就是空白）
+        .overlay(alignment: .bottom) {
             Circle()
                 .fill(EventProvider.shared.hasEvent(on: cell.date) && cell.inMonth
                       ? Color.accentColor : .clear)
                 .frame(width: t.eventDot, height: t.eventDot)
-                .padding(.bottom, 2)
+                .offset(y: t.eventDot)
         }
-        .frame(maxWidth: .infinity)
         .background(bandBg(cell))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -266,6 +261,20 @@ public struct CalendarPopoverView: View {
         }
         .onTapGesture(count: 1) {
             selectedDay = isSelected(cell) ? nil : cell.date
+        }
+    }
+
+    /// 休 / 班 角标：叠在单元格预留位（半个条带高）的右上角，落在色带内
+    @ViewBuilder
+    private func badgeTag(_ cell: DayCell) -> some View {
+        if let b = cell.badge {
+            Text(b)
+                .font(.system(size: t.badgeFont, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 2)
+                .background(badgeBg(cell))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .padding(.trailing, 3)
         }
     }
 
