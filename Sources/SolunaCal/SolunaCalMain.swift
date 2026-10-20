@@ -11,6 +11,21 @@ enum SolunaCalMain {
         if CommandLine.arguments.contains("--selfcheck") {
             exit(SelfCheck.run())
         }
+        // 更新检查的调试入口：打印当前版本与已挂载卷里的候选，供无头验证
+        if CommandLine.arguments.contains("--check-update") {
+            let cur = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+            print("当前版本 \(cur)")
+            let vols = FileManager.default.mountedVolumeURLs(
+                includingResourceValuesForKeys: [.volumeNameKey], options: [.skipHiddenVolumes]) ?? []
+            print("挂载卷：\(vols.map(\.path).joined(separator: " | "))")
+            if let c = UpdateInstaller.findCandidate() {
+                print("发现候选 \(c.version)  \(c.appURL.path)")
+                exit(0)
+            } else {
+                print("没有更高版本")
+                exit(1)
+            }
+        }
 
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)   // 菜单栏 App，无 Dock 图标
@@ -149,6 +164,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.applyStatusAppearance()
         }
 
+        // 更新：双击新 DMG 后由本进程接手（DMG 里的可执行体过不了 Gatekeeper）
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.checkForUpdate(manual: false)
+        }
+        // 启动时也查一次：用户可能先挂载了 DMG 再启动
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.checkForUpdate(manual: false)
+        }
+
         if Onboarding.needsOnboarding {
             LaunchLog.write("弹出首次引导窗口")
             showOnboarding()
@@ -173,12 +198,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showStatusMenu() {
         let menu = NSMenu()
+        let update = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdateMenu), keyEquivalent: "")
+        update.target = self
+        menu.addItem(update)
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "退出 SolunaCal", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil   // 弹完立刻摘掉，避免影响左键直接开弹窗
+    }
+
+    @objc private func checkForUpdateMenu() {
+        checkForUpdate(manual: true)
+    }
+
+    /// 找新版本并按需弹窗；manual=true 时即使已提示过也再问一次
+    private func checkForUpdate(manual: Bool) {
+        guard let candidate = UpdateInstaller.findCandidate() else {
+            if manual {
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "没有可用的新版本"
+                alert.informativeText = "当前 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")。\n先把新版本的安装包双击打开（会挂载成一个磁盘），再点这里。"
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            }
+            return
+        }
+        let key = "lastPromptedUpdate.version"
+        if !manual, UserDefaults.standard.string(forKey: key) == candidate.version { return }
+        UserDefaults.standard.set(candidate.version, forKey: key)
+        _ = UpdateInstaller.askAndInstall(candidate)
     }
 
     @objc private func quitApp() {

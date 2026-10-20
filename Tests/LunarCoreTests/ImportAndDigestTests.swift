@@ -106,4 +106,17 @@ final class ImportAndDigestTests: XCTestCase {
         }
     }
 
+
+    // MARK: 版本比较（更新判定的地基）
+
+    func testVersionCompareHandlesSegmentWidth() {
+        // 逐字符比较会把 0.10 判成小于 0.9，这里按数值分段比
+        XCTAssertTrue(AppVersion.isNewer("0.10.0", than: "0.9.9"))
+        XCTAssertFalse(AppVersion.isNewer("0.9.9", than: "0.10.0"))
+        XCTAssertTrue(AppVersion.isNewer("0.3.1", than: "0.3.0"))
+        XCTAssertFalse(AppVersion.isNewer("0.3.0", than: "0.3.0"))
+        XCTAssertTrue(AppVersion.isNewer("1.0", than: "0.99.99"))
+        XCTAssertFalse(AppVersion.isNewer("1.0", than: "1.0.0"), "缺省段按 0 补齐")
+        XCTAssertTrue(AppVersion.isNewer("0.3.1-beta", than: "0.3.0"), "预发布后缀不参与比较")
+    }
 }
