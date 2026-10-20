@@ -20,6 +20,10 @@ public enum NotificationManager {
 
     /// 全量重排未来 60 天通知。无任何开关开启时清空并跳过授权请求。
     public static func reschedule(store: BirthdayStore, now: Date = Date()) {
+        // UNUserNotificationCenter.current() 要求进程有真实的 app bundle；
+        // 拿不到 bundleProxyForCurrentProcess 时它会抛 ObjC 异常，Swift 接不住，
+        // 进程直接死——表现就是「双击后什么都没有」。这里提前挡掉。
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let plans = NotificationPlanner.plan(now: now, prefs: prefs, store: store)
         let center = UNUserNotificationCenter.current()
         center.removeAllPendingNotificationRequests()

@@ -6,6 +6,12 @@ import SolunaUI
 @main
 enum SolunaCalMain {
     static func main() {
+        // 自检模式：打印环境检查结果后直接退出，不建菜单栏项、不常驻。
+        // 用途：用户报「装完没反应」时，让他在终端跑一条命令把输出发回来。
+        if CommandLine.arguments.contains("--selfcheck") {
+            exit(SelfCheck.run())
+        }
+
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)   // 菜单栏 App，无 Dock 图标
         let delegate = AppDelegate()
@@ -21,7 +27,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hoverTimer: Timer?
     private let store = BirthdayStore()
 
+    /// 菜单栏形态（0=纯文字 1=图标+文字 2=纯图标）。
+    /// 未写过该键时取 1——原先直接读 integer 会得到 0，导致「图标+文字」这条
+    /// 默认路径从未生效，自定义的月印图标一直不显示。
+    static var statusStyle: Int {
+        let ud = UserDefaults.standard
+        return ud.object(forKey: "statusItemStyle") == nil ? 1 : ud.integer(forKey: "statusItemStyle")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 第一行就写日志：哪怕后面某步崩了，也能看出「启动到了这里」
+        LaunchLog.write("启动 v\(LaunchLog.versionText) \(LaunchLog.systemText) path=\(Bundle.main.bundlePath)")
+
         HolidayStore.refreshInBackground()
         // 同步登录自启注册状态与偏好（升级/重装后保持一致）
         if UserDefaults.standard.bool(forKey: "launchAtLogin") { LaunchAtLogin.apply() }
@@ -31,7 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.register(HotKeyManager.saved)
 
         // 通知：启动时全量重排 + 每小时检查、落在凌晨 3 点的那次 tick 重排（幂等）
-        NotificationManager.reschedule(store: store)
+        if Bundle.main.bundleIdentifier != nil {
+            NotificationManager.reschedule(store: store)
+        } else {
+            LaunchLog.write("跳过通知调度：当前进程没有 bundle id（不是标准 .app 启动）")
+        }
         Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
             let c = Calendar(identifier: .gregorian)
             if c.component(.hour, from: Date()) == 3 { NotificationManager.reschedule(store: self.store) }
@@ -39,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 调试预览：--preview 直接把弹窗内容放进普通窗口（供截图自查）
         if CommandLine.arguments.contains("--preview") {
+            LaunchLog.write("预览模式（--preview）：不建菜单栏项，直接开窗口")
             NSApp.setActivationPolicy(.regular)
             let win = NSWindow(
                 contentRect: NSRect(x: 200, y: 200, width: 320, height: 420),
@@ -53,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 状态项形态：0=纯文字 1=图标+文字（默认） 2=纯图标（菜单栏拥挤时兜底）
-        let style = UserDefaults.standard.integer(forKey: "statusItemStyle")
+        let style = Self.statusStyle
         statusItem = NSStatusBar.system.statusItem(
             withLength: style == 2 ? NSStatusItem.squareLength : NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -69,6 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         updateTitle()
+
+        // 菜单栏项是唯一可见入口：建没建出来、标题是什么，必须留痕
+        if let button = statusItem.button {
+            LaunchLog.write("菜单栏项已创建 style=\(style) 标题=「\(button.title)」 图标=\(button.image != nil ? "有" : "无")")
+        } else {
+            LaunchLog.write("错误：菜单栏项创建失败（button 为 nil），界面不可见")
+        }
 
         // 悬停弹出（二期）：trackingArea 跟随按钮可视区域；owner 必须是 NSResponder
         if let button = statusItem.button {
@@ -101,8 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if Onboarding.needsOnboarding {
+            LaunchLog.write("弹出首次引导窗口")
             showOnboarding()
+        } else {
+            LaunchLog.write("首次引导已完成，本次不弹窗口（只显示菜单栏项）")
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        LaunchLog.write("退出")
     }
 
     @objc private func togglePopover() {
@@ -131,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateTitle() {
-        guard UserDefaults.standard.integer(forKey: "statusItemStyle") != 2 else {
+        guard Self.statusStyle != 2 else {
             statusItem.button?.title = ""
             return
         }
