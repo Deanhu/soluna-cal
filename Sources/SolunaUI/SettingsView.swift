@@ -11,6 +11,9 @@ public struct SettingsView: View {
     @AppStorage("popoverDensity") private var popoverDensity = PopoverDensity.standard.rawValue
     @AppStorage("menuBarLunar") private var menuBarLunar = false
     @AppStorage("menuBarTemplate") private var menuBarTemplate: String?
+    /// 菜单栏形态：0=仅文字 1=图标+文字 2=仅图标。
+    /// 与 AppDelegate.statusStyle 读取同一个键，默认 1。
+    @AppStorage("statusItemStyle") private var statusItemStyle = 1
     @State private var customTemplate = ""
     @AppStorage("skin") private var skinRaw = Skin.default.rawValue
     @AppStorage("ganzhiEnabled") private var ganzhiEnabled = false
@@ -70,6 +73,29 @@ public struct SettingsView: View {
                     UserDefaults.standard.removeObject(forKey: "menuBarTemplate")
                     NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
                 }
+
+            // 菜单栏形态：决定显示「图标 + 文字 / 只有图标 / 只有文字」。
+            // 刘海屏 Mac 上菜单栏放不下时，系统会把项藏到刘海后面（看不见也没提示），
+            // 切成「仅图标」宽度从约 120pt 降到约 22pt，基本都能挤回来。
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("菜单栏形态").font(.callout)
+                    Spacer()
+                    Picker("菜单栏形态", selection: $statusItemStyle) {
+                        Text("仅文字").tag(0)
+                        Text("图标 + 文字").tag(1)
+                        Text("仅图标").tag(2)
+                    }
+                    .labelsHidden().frame(width: 132)
+                    .onChange(of: statusItemStyle) {
+                        NotificationCenter.default.post(name: .menuBarStyleNeedsUpdate, object: nil)
+                    }
+                }
+                if statusItemStyle != 2 {
+                    Text("右上角看不到它时，切「仅图标」更容易露出来")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
 
             // 菜单栏格式（二期 token 拼装）：预设 3 档 + 自定义
             VStack(alignment: .leading, spacing: 6) {

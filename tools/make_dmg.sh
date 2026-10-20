@@ -115,7 +115,19 @@ cat > "$STAGE/① 先看这里 安装说明.txt" << 'EOF'
 ------------------------
 它没有 Dock 图标，也不会开窗口，只在屏幕右上角菜单栏显示。先往右上角看。
 
-还是找不到，就把下面这一行整行贴进「终端」回车，把输出截图发回给我：
+还是找不到，最可能是菜单栏太挤——刘海屏 Mac 上，放不下的项会被系统藏到刘海后面，
+不显示也不提示。先切成「仅图标」试试（宽度从约 120pt 降到约 22pt）：
+
+  · 能打开弹窗的话：点菜单栏日期 → 齿轮「设置」→「菜单栏形态」改成「仅图标」
+  · 打不开弹窗（因为根本看不到图标）：终端里粘贴这三行
+
+      defaults write com.soluna.cal statusItemStyle -int 2
+      pkill -x SolunaCal; sleep 1
+      open /Applications/SolunaCal.app
+
+其他办法：退出几个别的菜单栏 App 腾位置，或把鼠标移到屏幕顶部再等一秒。
+
+如果还是不行，把下面这行贴进「终端」回车，把输出截图发回给我：
 
 /Applications/SolunaCal.app/Contents/MacOS/SolunaCal --selfcheck
 

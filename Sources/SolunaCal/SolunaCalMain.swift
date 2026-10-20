@@ -35,6 +35,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return ud.object(forKey: "statusItemStyle") == nil ? 1 : ud.integer(forKey: "statusItemStyle")
     }
 
+    /// 按当前形态重建状态项的宽度与图标。
+    /// 形态切换必须重建（宽度和有无图标都变了），只改标题不够。
+    private func applyStatusAppearance() {
+        guard statusItem != nil else { return }
+        let style = Self.statusStyle
+        statusItem.length = style == 2 ? NSStatusItem.squareLength : NSStatusItem.variableLength
+        if let button = statusItem.button {
+            if style >= 1 {
+                // 自定义菜单栏模板图标（日历+弦月）；模板渲染自动适配深浅菜单栏
+                let img = NSImage(named: "MenuBarIcon")
+                img?.isTemplate = true
+                if let img { img.accessibilityDescription = "Soluna" }
+                button.image = img ?? NSImage(systemSymbolName: "calendar", accessibilityDescription: "Soluna")
+            } else {
+                button.image = nil
+            }
+        }
+        updateTitle()
+        LaunchLog.write("菜单栏形态已应用 style=\(style) 宽度=\(style == 2 ? "方形" : "自适应") 标题=「\(statusItem.button?.title ?? "")」")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 第一行就写日志：哪怕后面某步崩了，也能看出「启动到了这里」
         LaunchLog.write("启动 v\(LaunchLog.versionText) \(LaunchLog.systemText) path=\(Bundle.main.bundlePath)")
@@ -76,23 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 状态项形态：0=纯文字 1=图标+文字（默认） 2=纯图标（菜单栏拥挤时兜底）
         let style = Self.statusStyle
-        statusItem = NSStatusBar.system.statusItem(
-            withLength: style == 2 ? NSStatusItem.squareLength : NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.action = #selector(handleStatusClick)
             button.target = self
             // 同时接左键和右键：左键弹月历，右键出「退出」菜单
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            if style >= 1 {
-                // 自定义菜单栏模板图标（日历+弦月）；模板渲染自动适配深浅菜单栏
-                let img = NSImage(named: "MenuBarIcon")
-                img?.isTemplate = true
-                if let img { img.accessibilityDescription = "Soluna" }
-                button.image = img ?? NSImage(systemSymbolName: "calendar", accessibilityDescription: "Soluna")
-            }
         }
-        updateTitle()
+        applyStatusAppearance()
 
         // 菜单栏项是唯一可见入口：建没建出来、标题是什么，必须留痕
         if let button = statusItem.button {
@@ -129,6 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: .menuBarTitleNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
             self?.updateTitle()
+        }
+        // 设置里切换菜单栏形态：宽度和图标都变了，必须重建
+        NotificationCenter.default.addObserver(
+            forName: .menuBarStyleNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
+            self?.applyStatusAppearance()
         }
 
         if Onboarding.needsOnboarding {

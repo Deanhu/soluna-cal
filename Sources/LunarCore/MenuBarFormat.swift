@@ -86,4 +86,8 @@ public enum MenuBarFormat {
 public extension Notification.Name {
     /// 菜单栏标题相关偏好变更（设置页切换格式/农历开关时发出，App 主入口监听并即时刷新）
     static let menuBarTitleNeedsUpdate = Notification.Name("menuBarTitleNeedsUpdate")
+
+    /// 菜单栏形态变更（纯文字 / 图标+文字 / 纯图标）。
+    /// 形态决定状态项宽度与有没有图标，必须重建，不能只改标题。
+    static let menuBarStyleNeedsUpdate = Notification.Name("menuBarStyleNeedsUpdate")
 }
