@@ -86,6 +86,9 @@ enum RenderHarnessMain {
             }
             hosting = NSHostingView(rootView: AnyView(
                 YearOverviewView(year: y, digest: digest, skin: .default, onPick: { _ in })))
+        } else if args.contains("--event-editor") {
+            hosting = NSHostingView(rootView: AnyView(
+                EventEditorView(date: initialMonth ?? Date()) { }))
         } else if args.contains("--import") {
             hosting = NSHostingView(rootView: AnyView(
                 BirthdayImportView(initialText: "妈妈 9-19 农历\n小王 10-20 公历\n奶奶 闰6-05 农历\n张三 13-1 农历") { _ in }))

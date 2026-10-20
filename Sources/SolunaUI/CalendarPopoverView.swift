@@ -24,8 +24,6 @@ public struct CalendarPopoverView: View {
     @State private var selectedDay: Date?
     @State private var editingDay: Date?
     @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
-    @State private var newEventTitle = ""
-    @State private var eventError: String?
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
     @AppStorage("popoverDensity") private var densityRaw = PopoverDensity.standard.rawValue
@@ -45,9 +43,12 @@ public struct CalendarPopoverView: View {
             header
             weekdayRow
             monthGrid
-            inlineEventEditor
-            selectedDayEvents
-            if yijiEnabled, let yj = Yiji.on(date: Date()) {
+            if let sel = selectedDay {
+                DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled) {
+                    editingDay = sel
+                }
+            }
+            if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
                     .font(.system(size: t.lunarFont))
                     .foregroundStyle(.secondary)
@@ -62,6 +63,18 @@ public struct CalendarPopoverView: View {
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
+        .sheet(isPresented: Binding(
+            get: { editingDay != nil },
+            set: { if !$0 { editingDay = nil } }
+        )) {
+            if let day = editingDay {
+                EventEditorView(date: day, calendar: cal) {
+                    EventProvider.shared.refresh(
+                        year: cal.component(.year, from: day),
+                        month: cal.component(.month, from: day))
+                }
+            }
+        }
         .sheet(isPresented: $showYear) {
             let year = cal.component(.year, from: displayed)
             YearOverviewView(
@@ -162,73 +175,6 @@ public struct CalendarPopoverView: View {
         }
     }
 
-    /// 双击日期的就地编辑条（二期：写入系统日历）
-    @ViewBuilder
-    private var inlineEventEditor: some View {
-        if let ed = editingDay {
-            let m = cal.component(.month, from: ed)
-            let d = cal.component(.day, from: ed)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("\(m)月\(d)日")
-                        .font(.system(size: t.footerFont, weight: .medium))
-                    TextField("事件名称（写进系统日历）", text: $newEventTitle)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: t.footerFont))
-                        .onSubmit { commitEvent() }
-                    Button("保存") { commitEvent() }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(newEventTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button("取消") { editingDay = nil; eventError = nil }
-                        .buttonStyle(.plain).controlSize(.small)
-                }
-                if let err = eventError {
-                    Text(err).font(.caption).foregroundStyle(.red)
-                }
-            }
-            .padding(.horizontal, 8).padding(.top, 4)
-        }
-    }
-
-    private func commitEvent() {
-        guard let ed = editingDay else { return }
-        let title = newEventTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
-        do {
-            try EventProvider.shared.addEvent(title: title, on: ed)
-            editingDay = nil; newEventTitle = ""; eventError = nil
-            selectedDay = ed   // 保存后直接展示该日（能看到新事件点）
-        } catch {
-            eventError = "写入失败：\(error.localizedDescription)"
-        }
-    }
-
-    /// 选中日的事件列表（点日期展开；只读）
-    @ViewBuilder
-    private var selectedDayEvents: some View {
-        if let sel = selectedDay {
-            let d = cal.component(.day, from: sel)
-            let m = cal.component(.month, from: sel)
-            let events = EventProvider.shared.events(on: sel)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(m)月\(d)日 日程")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                if ganzhiEnabled { ganzhiLine(for: sel) }
-                if events.isEmpty {
-                    Text(EventProvider.shared.authorized ? "当日无日程" : "授权系统日历后显示当日日程")
-                        .font(.system(size: 11)).foregroundStyle(.tertiary)
-                } else {
-                    ForEach(events, id: \.self) { t in
-                        Text("· " + t).font(.system(size: 11)).lineLimit(1)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8).padding(.top, 4)
-        }
-    }
-
     /// 干支时辰行（默认关）：日柱 + 当前时辰（真太阳时校正）
     private func ganzhiLine(for day: Date) -> some View {
         let lon = LocationProvider.shared.longitude
@@ -280,10 +226,9 @@ public struct CalendarPopoverView: View {
         }
         .background(bandBg(cell))
         .contentShape(Rectangle())
+        // 双击：打开新建日程面板（单击是选中，两个手势必须按 2 → 1 的顺序挂）
         .onTapGesture(count: 2) {
             editingDay = cell.date
-            newEventTitle = ""
-            eventError = nil
         }
         .onTapGesture(count: 1) {
             selectedDay = isSelected(cell) ? nil : cell.date
