@@ -86,6 +86,9 @@ public final class EventProvider {
         ev.startDate = start
         ev.endDate = start.addingTimeInterval(3600)
         ev.calendar = target
+        // 不带闹钟的事件写进系统日历后【不会提醒】——EventKit 不会套用日历的默认提醒。
+        // 用户在这里建日程就是想让 App 提醒他，所以固定加一条「开始前 10 分钟」。
+        ev.addAlarm(EKAlarm(relativeOffset: -10 * 60))
         try store.save(ev, span: .thisEvent)
         refresh(year: cal.component(.year, from: date), month: cal.component(.month, from: date))
     }

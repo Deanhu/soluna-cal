@@ -45,7 +45,7 @@ public struct EventEditorView: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
 
-            Text("会写入系统「日历」的默认日历，时间 1 小时（从当天 9:00 起）。")
+            Text("写入系统「日历」的默认日历：当天 9:00–10:00，开始前 10 分钟提醒。")
                 .font(.caption).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
