@@ -33,6 +33,14 @@ public struct SettingsView: View {
 
     public init(store: BirthdayStore) { self.store = store }
 
+    /// 页脚展示的版本号
+    static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+
     public var body: some View {
         ScrollView {
         VStack(alignment: .leading, spacing: 10) {
@@ -217,6 +225,20 @@ public struct SettingsView: View {
                     }
                 }
             }
+
+            Divider().padding(.top, 6)
+
+            // 退出入口：菜单栏配件 App 没有 Dock 图标、也没有应用菜单，
+            // 不在这里给一个按钮，用户就只能去「活动监视器」杀进程，
+            // 也就没法把 App 拖进废纸篓（系统拒删运行中的 App）。
+            HStack(spacing: 8) {
+                Text("SolunaCal \(Self.versionText)")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("退出 SolunaCal") { NSApp.terminate(nil) }
+                    .controlSize(.small)
+            }
+            .padding(.top, 2)
         }
             .padding(12)
             .frame(width: 360)

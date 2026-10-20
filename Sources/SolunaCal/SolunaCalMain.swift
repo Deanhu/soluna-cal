@@ -79,8 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(
             withLength: style == 2 ? NSStatusItem.squareLength : NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.action = #selector(togglePopover)
+            button.action = #selector(handleStatusClick)
             button.target = self
+            // 同时接左键和右键：左键弹月历，右键出「退出」菜单
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
             if style >= 1 {
                 // 自定义菜单栏模板图标（日历+弦月）；模板渲染自动适配深浅菜单栏
@@ -141,8 +143,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LaunchLog.write("退出")
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
+    /// 菜单栏按钮点击：左键弹月历，右键出菜单（右键里必须有「退出」，
+    /// 否则用户没法关掉这个没有 Dock 图标、也没有应用菜单的 App，连带删不掉）
+    @objc private func handleStatusClick() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showStatusMenu()
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func showStatusMenu() {
+        let menu = NSMenu()
+        let quit = NSMenuItem(title: "退出 SolunaCal", action: #selector(quitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil   // 弹完立刻摘掉，避免影响左键直接开弹窗
+    }
+
+    @objc private func quitApp() {
+        LaunchLog.write("用户从菜单栏退出")
+        NSApp.terminate(nil)
+    }
+
+    @objc private func togglePopover() {        guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
