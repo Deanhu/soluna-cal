@@ -234,7 +234,8 @@ public struct CalendarPopoverView: View {
                 )
             // 农历小字（非当月格不显示，避免噪音）
             Text(cell.inMonth ? cell.lunarText : " ")
-                .font(.system(size: t.lunarFont))
+                .font(.system(size: t.lunarFont,
+                              weight: cell.tone == .birthday ? .semibold : .regular))
                 .foregroundStyle(lunarColor(cell))
                 .lineLimit(1)
         }
@@ -298,6 +299,7 @@ public struct CalendarPopoverView: View {
     private func lunarColor(_ cell: DayCell) -> Color {
         switch cell.tone {
         case .festival: return skin.festivalText
+        case .birthday: return skin.birthdayText
         case .term:     return skin.termText
         case .faint:    return .adaptive(light: 0xC7C7CC, dark: 0x545456)
         case .normal:   return .adaptive(light: 0x86868B, dark: 0x98989D)

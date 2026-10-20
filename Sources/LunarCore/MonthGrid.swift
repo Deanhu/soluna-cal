@@ -10,6 +10,7 @@ public enum MonthGrid {
     public enum TextTone: Equatable {
         case normal      // 普通农历日
         case festival    // 节日
+        case birthday    // 生日（单独色调，不和节日共用）
         case term        // 节气
         case faint       // 非本月
     }
@@ -68,7 +69,7 @@ public enum MonthGrid {
             }
             // 生日优先于初一月份名（「妈妈」比「冬月初一」对用户更重要）
             if let b = birthdayText?(d, lunar) {
-                text = b; tone = .festival
+                text = b; tone = .birthday
             }
             if !inMonth { tone = .faint }
 

@@ -45,6 +45,9 @@ public enum Skin: String, CaseIterable, Identifiable {
     }
     var termText: Color { .adaptive(light: 0xB8860B, dark: 0xE3B341) }
 
+    /// 生日文案（玫红）：与节日红、节气金都拉开，避免「看不出这是生日」
+    var birthdayText: Color { .adaptive(light: 0xE0235C, dark: 0xFF7AAF) }
+
     var todayFill: Color {         // 今日实心（春节皮肤换朱砂，蓝色让给系统）
         switch self {
         case .default: return Color.accentColor

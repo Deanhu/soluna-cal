@@ -206,7 +206,8 @@ final class Phase2Tests: XCTestCase {
         }
         let hit = cells.first { cal.isDate($0.date, inSameDayAs: target) }
         XCTAssertEqual(hit?.lunarText, "妈妈")
-        XCTAssertEqual(hit?.tone, .festival)
+        // 生日必须用独立色调：以前和节日共用 .festival，用户分不出是节日还是生日
+        XCTAssertEqual(hit?.tone, .birthday)
     }
 
     /// 边界月份不崩：1900-01 / 2099-12 仍返回 42 格
