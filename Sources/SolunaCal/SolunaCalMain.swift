@@ -281,7 +281,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "欢迎使用 Soluna"
         wc.window?.contentViewController = NSHostingController(
-            rootView: OnboardingView { Onboarding.markCompleted() ; wc.close() })
+            rootView: OnboardingView {
+                Onboarding.markCompleted()
+                // 引导里可能刚打开提醒：立刻排期，别等下一次启动
+                NotificationManager.reschedule(store: self.store)
+                wc.close()
+            })
         wc.window?.center()
         wc.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

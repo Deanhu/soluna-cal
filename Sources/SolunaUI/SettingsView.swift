@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 import LunarCore
 
 /// 弹窗内的设置与录入面板（一期：宜忌开关 / 农历生日录入 / 登录自启）
@@ -16,6 +17,7 @@ public struct SettingsView: View {
     @AppStorage("statusItemStyle") private var statusItemStyle = 1
     @State private var customTemplate = ""
     @State private var showImport = false
+    @State private var notifyAuth: UNAuthorizationStatus = .notDetermined
     @AppStorage("skin") private var skinRaw = Skin.default.rawValue
     @AppStorage("ganzhiEnabled") private var ganzhiEnabled = false
     @AppStorage("hoverEnabled") private var hoverEnabled = false
@@ -179,7 +181,17 @@ public struct SettingsView: View {
 
             // 通知（二期 V2-2）
             Divider()
-            Text("通知").font(.subheadline).fontWeight(.medium)
+            HStack(spacing: 6) {
+                Text("通知").font(.subheadline).fontWeight(.medium)
+                Spacer()
+                Text(authText)
+                    .font(.caption)
+                    .foregroundStyle(authColor)
+                if notifyAuth == .denied {
+                    Button("去系统设置") { openNotificationSettings() }
+                        .buttonStyle(.link).font(.caption)
+                }
+            }
             Toggle("放假前一日提醒（18:00）", isOn: $notifyHolidayEve)
                 .toggleStyle(.switch).controlSize(.small).onChange(of: notifyHolidayEve) { reschedule() }
             Toggle("节日当天提醒（09:00）", isOn: $notifyFestival)
@@ -197,6 +209,11 @@ public struct SettingsView: View {
                         .labelsHidden().frame(width: 64)
                 }
             }
+
+            Text(nextReminderText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Divider()
 
@@ -289,6 +306,7 @@ public struct SettingsView: View {
                 reschedule()   // 新条目纳入提醒
             }
         }
+        .task { await loadNotificationAuth() }
         .onAppear {
             if customTemplate.isEmpty {
                 customTemplate = menuBarTemplate ?? MenuBarFormat.presets[1].template
@@ -359,6 +377,53 @@ public struct SettingsView: View {
                 NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
             }
         )
+    }
+
+    // MARK: 通知状态
+
+    /// 读系统通知权限。没有 bundle 时（离屏渲染）直接跳过——
+    /// UNUserNotificationCenter.current() 在无 bundle 进程里会抛 ObjC 异常。
+    private func loadNotificationAuth() async {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notifyAuth = settings.authorizationStatus
+    }
+
+    private var authText: String {
+        switch notifyAuth {
+        case .authorized, .provisional: return "已允许"
+        case .denied:                   return "已拒绝"
+        case .notDetermined:            return "尚未询问"
+        @unknown default:               return "未知"
+        }
+    }
+
+    private var authColor: Color {
+        switch notifyAuth {
+        case .authorized, .provisional: return .secondary
+        case .denied:                   return .red
+        default:                        return .secondary
+        }
+    }
+
+    private func openNotificationSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+        if let url { NSWorkspace.shared.open(url) }
+    }
+
+    /// 让「提醒到底排上没有」可见：算一遍未来 60 天的计划，取最近一条
+    private var nextReminderText: String {
+        let plans = NotificationPlanner.plan(now: Date(),
+                                             prefs: NotificationManager.prefs,
+                                             store: store)
+        if let p = plans.first {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "zh_CN")
+            f.dateFormat = "M月d日 EEEE HH:mm"
+            return "下次提醒：\(f.string(from: p.fireDate)) · \(p.title)"
+        }
+        let anyOn = notifyHolidayEve || notifyFestival || notifyBirthday
+        return anyOn ? "未来 60 天没有可提醒的日子" : "提醒全部关闭，不会收到通知"
     }
 
     // MARK: 二期联动

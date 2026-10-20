@@ -95,7 +95,11 @@ enum RenderHarnessMain {
         } else if args.contains("--settings") {
             hosting = NSHostingView(rootView: AnyView(SettingsView(store: store)))
         } else if args.contains("--onboarding") {
-            hosting = NSHostingView(rootView: AnyView(OnboardingView(onFinish: {})))
+            var startPage = 0
+            if let flag = args.first(where: { $0.hasPrefix("--page=") }),
+               let n = Int(flag.dropFirst("--page=".count)) { startPage = n }
+            hosting = NSHostingView(rootView: AnyView(
+                OnboardingView(initialPage: startPage, onFinish: {})))
         } else {
             hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth, initialSelected: initialSelected, initialEditing: initialEditing)))
         }
