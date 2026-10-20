@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import SolunaUI
+import LunarCore
 
 /// 离屏渲染 harness：把弹窗视图绘成 PNG，用于无头自查。
 /// 用法: RenderHarness <输出.png>
@@ -77,7 +78,18 @@ enum RenderHarnessMain {
             store = BirthdayStore()
         }
         let hosting: NSHostingView<AnyView>
-        if args.contains("--settings") {
+        if args.contains("--year") {
+            let y = 2026
+            let c = Calendar(identifier: .gregorian)
+            let digest = YearDigest.build(year: y, calendar: c) { d, _ in
+                (c.component(.month, from: d) == 10 && c.component(.day, from: d) == 28) ? "妈妈" : nil
+            }
+            hosting = NSHostingView(rootView: AnyView(
+                YearOverviewView(year: y, digest: digest, skin: .default, onPick: { _ in })))
+        } else if args.contains("--import") {
+            hosting = NSHostingView(rootView: AnyView(
+                BirthdayImportView(initialText: "妈妈 9-19 农历\n小王 10-20 公历\n奶奶 闰6-05 农历\n张三 13-1 农历") { _ in }))
+        } else if args.contains("--settings") {
             hosting = NSHostingView(rootView: AnyView(SettingsView(store: store)))
         } else if args.contains("--onboarding") {
             hosting = NSHostingView(rootView: AnyView(OnboardingView(onFinish: {})))

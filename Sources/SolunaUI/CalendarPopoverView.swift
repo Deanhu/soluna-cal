@@ -20,6 +20,7 @@ public struct CalendarPopoverView: View {
     @ObservedObject var store: BirthdayStore
     @State private var displayed: Date
     @State private var showSettings = false
+    @State private var showYear = false
     @State private var selectedDay: Date?
     @State private var editingDay: Date?
     @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
@@ -61,6 +62,22 @@ public struct CalendarPopoverView: View {
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
+        .sheet(isPresented: $showYear) {
+            let year = cal.component(.year, from: displayed)
+            YearOverviewView(
+                year: year,
+                digest: YearDigest.build(year: year, calendar: cal) { d, lunar in
+                    guard let b = store.match(date: d, lunar: lunar) else { return nil }
+                    return b.name.count <= 2 ? b.name : "生日"
+                },
+                skin: skin,
+                onPick: { month in
+                    if let d = cal.date(from: DateComponents(year: year, month: month, day: 1)) {
+                        displayed = d
+                    }
+                }
+            )
+        }
         .onAppear { refreshEvents() }
         .onChange(of: displayed) { refreshEvents() }
         .onReceive(NotificationCenter.default.publisher(for: .locationDidUpdate)) { _ in
@@ -84,7 +101,15 @@ public struct CalendarPopoverView: View {
             Button(action: { shiftMonth(-1) }) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             Spacer()
-            Text(monthTitle).font(.headline)
+            Button(action: { showYear = true }) {
+                HStack(spacing: 2) {
+                    Text(monthTitle).font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
             Spacer()
             Button(action: { shiftMonth(1) }) { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)

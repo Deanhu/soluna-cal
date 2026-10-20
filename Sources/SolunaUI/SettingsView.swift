@@ -15,6 +15,7 @@ public struct SettingsView: View {
     /// 与 AppDelegate.statusStyle 读取同一个键，默认 1。
     @AppStorage("statusItemStyle") private var statusItemStyle = 1
     @State private var customTemplate = ""
+    @State private var showImport = false
     @AppStorage("skin") private var skinRaw = Skin.default.rawValue
     @AppStorage("ganzhiEnabled") private var ganzhiEnabled = false
     @AppStorage("hoverEnabled") private var hoverEnabled = false
@@ -199,7 +200,12 @@ public struct SettingsView: View {
 
             Divider()
 
-            Text("生日 / 纪念日").font(.subheadline).fontWeight(.medium)
+            HStack {
+                Text("生日 / 纪念日").font(.subheadline).fontWeight(.medium)
+                Spacer()
+                Button("批量添加") { showImport = true }
+                    .buttonStyle(.link).font(.caption)
+            }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     TextField("名字", text: $newName)
@@ -271,6 +277,18 @@ public struct SettingsView: View {
         }
         .frame(width: 360)
         .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $showImport) {
+            BirthdayImportView { rows in
+                for r in rows {
+                    store.add(.init(name: r.name,
+                                     lunarMonth: r.month,
+                                     lunarDay: r.day,
+                                     isLeapMonth: r.isLeapMonth,
+                                     calendar: r.isLunar ? .lunar : .solar))
+                }
+                reschedule()   // 新条目纳入提醒
+            }
+        }
         .onAppear {
             if customTemplate.isEmpty {
                 customTemplate = menuBarTemplate ?? MenuBarFormat.presets[1].template
