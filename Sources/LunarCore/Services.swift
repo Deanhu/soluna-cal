@@ -16,7 +16,17 @@ public enum Yiji {
 public final class EventProvider {
     public static let shared = EventProvider()
     private let store = EKEventStore()
-    private var cached: [String: [String]] = [:]   // "yyyy-M-d" -> 当日事件标题
+    private var cached: [String: [EventItem]] = [:]   // "yyyy-M-d" -> 当日事件
+
+    /// 一条日程：标题之外还留时间与日历名。
+    /// 光有标题时，「同名事件出现在两个日历」会被显示成完全一样的两行，无处分辨。
+    public struct EventItem: Identifiable, Equatable {
+        public let id: String
+        public let title: String
+        public let start: Date
+        public let calendarTitle: String
+        public let isAllDay: Bool
+    }
 
     private init() {}
 
@@ -43,12 +53,19 @@ public final class EventProvider {
               let end = cal.date(byAdding: .month, value: 1, to: start) else { return }
         let pred = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         let events = store.events(matching: pred)
-        var map: [String: [String]] = [:]
+        var map: [String: [EventItem]] = [:]
         for e in events {
             let dc = cal.dateComponents([.year, .month, .day], from: e.startDate)
-            if let y = dc.year, let m = dc.month, let d = dc.day {
-                map["\(y)-\(m)-\(d)", default: []].append(e.title)
-            }
+            guard let y = dc.year, let m = dc.month, let d = dc.day else { continue }
+            let item = EventItem(id: e.eventIdentifier ?? UUID().uuidString,
+                                 title: e.title ?? "(无标题)",
+                                 start: e.startDate,
+                                 calendarTitle: e.calendar?.title ?? "?",
+                                 isAllDay: e.isAllDay)
+            map["\(y)-\(m)-\(d)", default: []].append(item)
+        }
+        for key in map.keys {
+            map[key] = Self.collapseDuplicates(map[key] ?? [])
         }
         cached = map
     }
@@ -64,10 +81,45 @@ public final class EventProvider {
         return cached[Self.key(of: date)] != nil
     }
 
-    /// 当日事件标题列表（只读；无授权/无事件 = 空）
-    public func events(on date: Date) -> [String] {
+    /// 去掉完全相同的条目（同标题 + 同开始时间 + 同日历）。
+    /// 分属不同日历的同名事件**保留**——那正是用户需要看见的区别。
+    static func collapseDuplicates(_ items: [EventItem]) -> [EventItem] {
+        var out: [EventItem] = []
+        var seen: Set<String> = []
+        for item in items {
+            let fp = "\(item.calendarTitle)|\(item.title)|\(item.start.timeIntervalSince1970)"
+            if seen.contains(fp) { continue }
+            seen.insert(fp)
+            out.append(item)
+        }
+        return out
+    }
+
+    /// 当日事件（只读；无授权/无事件 = 空）
+    public func events(on date: Date) -> [EventItem] {
         guard authorized else { return [] }
-        return cached[Self.key(of: date)] ?? []
+        return (cached[Self.key(of: date)] ?? []).sorted { $0.start < $1.start }
+    }
+
+    /// 诊断：某天系统日历里到底有几条事件，各自属于哪个日历。
+    /// 用户报「同一条出现两次」时，先跑这个再判断是数据重复还是显示问题。
+    public func dump(date: Date, calendar: Calendar = Calendar(identifier: .gregorian)) -> String {
+        guard authorized else { return "未授权系统日历，无法读取" }
+        let dayStart = calendar.startOfDay(for: date)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return "日期无效" }
+        let pred = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
+        let list = store.events(matching: pred)
+        var out = "\(date) 共 \(list.count) 条事件\n"
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "HH:mm"
+        for (i, e) in list.enumerated() {
+            out += "  \(i + 1). 「\(e.title ?? "(无标题)")」 \(df.string(from: e.startDate))–\(df.string(from: e.endDate))"
+            out += " 日历=\(e.calendar?.title ?? "?")"
+            out += " 全天=\(e.isAllDay ? "是" : "否")"
+            out += " id=\(e.eventIdentifier ?? "-")\n"
+        }
+        return out
     }
 
     /// 写入：在指定日创建 1 小时事件（二期双击创建；macOS 14 fullAccess 含写权限）

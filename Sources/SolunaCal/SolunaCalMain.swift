@@ -11,6 +11,29 @@ enum SolunaCalMain {
         if CommandLine.arguments.contains("--selfcheck") {
             exit(SelfCheck.run())
         }
+        // 日程诊断：某天系统日历到底有几条、各属哪个日历
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--dump-events=") }) {
+            let raw = String(flag.dropFirst("--dump-events=".count))
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.dateFormat = "yyyy-MM-dd"
+            guard let day = df.date(from: raw) else {
+                print("日期格式应为 YYYY-MM-DD，例如 --dump-events=2026-10-10")
+                exit(2)
+            }
+            var finished = false
+            EventProvider.shared.requestAccessIfNeeded {
+                print(EventProvider.shared.dump(date: day))
+                finished = true
+            }
+            // 手动泵主 RunLoop：授权回调投递在主队列，直接 sleep 会死锁
+            let deadline = Date().addingTimeInterval(20)
+            while !finished, Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+            }
+            if !finished { print("等待系统日历授权超时（20 秒）") }
+            exit(finished ? 0 : 1)
+        }
         // 更新检查的调试入口：打印当前版本与已挂载卷里的候选，供无头验证
         if CommandLine.arguments.contains("--check-update") {
             let cur = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

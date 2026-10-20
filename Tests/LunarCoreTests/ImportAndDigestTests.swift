@@ -119,4 +119,36 @@ final class ImportAndDigestTests: XCTestCase {
         XCTAssertFalse(AppVersion.isNewer("1.0", than: "1.0.0"), "缺省段按 0 补齐")
         XCTAssertTrue(AppVersion.isNewer("0.3.1-beta", than: "0.3.0"), "预发布后缀不参与比较")
     }
+
+    // MARK: 日程去重（同一条出现两次的排查结论落地）
+
+    private func item(_ title: String, calendar: String, minute: Int) -> EventProvider.EventItem {
+        EventProvider.EventItem(
+            id: UUID().uuidString,
+            title: title,
+            start: Date(timeIntervalSince1970: TimeInterval(minute * 60)),
+            calendarTitle: calendar,
+            isAllDay: false)
+    }
+
+    func testEventDedupKeepsDifferentCalendars() {
+        // 同名同时间但来自两个日历：两条都保留——用户需要看到「这是两个日历里的两份」
+        let a = item("国庆节（班）", calendar: "工作", minute: 0)
+        let b = item("国庆节（班）", calendar: "iCloud", minute: 0)
+        XCTAssertEqual(EventProvider.collapseDuplicates([a, b]).count, 2)
+    }
+
+    func testEventDedupCollapsesIdentical() {
+        // 完全相同的条目（同标题/同时间/同日历）只留一条
+        let a = item("国庆节（班）", calendar: "工作", minute: 0)
+        let b = item("国庆节（班）", calendar: "工作", minute: 0)
+        let out = EventProvider.collapseDuplicates([a, b])
+        XCTAssertEqual(out.count, 1)
+    }
+
+    func testEventDedupKeepsDifferentTimes() {
+        let a = item("站会", calendar: "工作", minute: 0)
+        let b = item("站会", calendar: "工作", minute: 30)
+        XCTAssertEqual(EventProvider.collapseDuplicates([a, b]).count, 2)
+    }
 }

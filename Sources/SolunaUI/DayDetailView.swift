@@ -23,6 +23,13 @@ public struct DayDetailView: View {
 
     private static let weekdayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private var weekday: String {
         // Calendar 的 weekday 是 1=周日…7=周六
         let idx = calendar.component(.weekday, from: date)
@@ -41,7 +48,7 @@ public struct DayDetailView: View {
         SolarTerm.on(date: date, calendar: calendar)?.description
     }
 
-    private var events: [String] { EventProvider.shared.events(on: date) }
+    private var events: [EventProvider.EventItem] { EventProvider.shared.events(on: date) }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -92,8 +99,20 @@ public struct DayDetailView: View {
                     }
                 }
             } else {
-                ForEach(events, id: \.self) { title in
-                    Text("· " + title).font(.system(size: 11)).lineLimit(1)
+                // 带上开始时间：同名事件从不同日历来时，时间与日历名是唯一的区分线索
+                ForEach(events) { item in
+                    HStack(spacing: 4) {
+                        Text(item.isAllDay ? "全天" : Self.timeFormatter.string(from: item.start))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text(item.title).font(.system(size: 11)).lineLimit(1)
+                        if events.count > 1, item.calendarTitle != "?" {
+                            Text(item.calendarTitle)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
             }
         }
