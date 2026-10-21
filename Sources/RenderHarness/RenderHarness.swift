@@ -86,6 +86,11 @@ enum RenderHarnessMain {
             }
             hosting = NSHostingView(rootView: AnyView(
                 YearOverviewView(year: y, digest: digest, skin: .default, onPick: { _ in })))
+        } else if args.contains("--yiji-sheet") {
+            let d = initialMonth ?? Date()
+            let yj = Yiji.on(date: d) ?? (yi: "嫁娶 纳采 订盟 开市 交易 立券 挂匾 祭祀 祈福 开光 造车器 出行 拆卸 修造 动土 上梁 安床 开仓 出货财", ji: "探病 纳畜 伐木 起基 作梁 盖屋")
+            hosting = NSHostingView(rootView: AnyView(
+                YijiSheet(date: d, yi: yj.yi, ji: yj.ji)))
         } else if args.contains("--event-editor") {
             hosting = NSHostingView(rootView: AnyView(
                 EventEditorView(date: initialMonth ?? Date()) { }))

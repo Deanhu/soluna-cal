@@ -11,6 +11,7 @@ public struct DayDetailView: View {
     let showYiji: Bool
     let onAddEvent: () -> Void
     let onRequestAccess: () -> Void
+    @State private var yijiSheetOpen = false
 
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
@@ -84,10 +85,20 @@ public struct DayDetailView: View {
                 .foregroundStyle(.secondary)
 
             if showYiji, let yj = Yiji.on(date: date, calendar: calendar) {
-                Text("宜 \(yj.yi)　忌 \(yj.ji)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                // 一行塞「宜…忌…」时，忌会被整段挤掉；拆成两行各自省略，
+                // 至少两边都能看到开头；完整内容点开看。
+                VStack(alignment: .leading, spacing: 1) {
+                    yijiLine("宜", yj.yi)
+                    yijiLine("忌", yj.ji)
+                }
+                .padding(.trailing, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { yijiSheetOpen = true }
+                .overlay(alignment: .trailing) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Divider().padding(.vertical, 1)
@@ -128,5 +139,26 @@ public struct DayDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.top, 4)
+        .sheet(isPresented: $yijiSheetOpen) {
+            if let yj = Yiji.on(date: date, calendar: calendar) {
+                YijiSheet(date: date, yi: yj.yi, ji: yj.ji, calendar: calendar)
+            }
+        }
+    }
+
+    /// 宜 / 忌 各一行：标签定宽对齐，内容单行省略
+    private func yijiLine(_ label: String, _ items: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 10, alignment: .center)
+            Text(items)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
     }
 }
