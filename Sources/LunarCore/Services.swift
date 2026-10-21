@@ -155,7 +155,20 @@ public final class EventProvider: ObservableObject {
         guard let start = cal.date(from: c0),
               let end = cal.date(byAdding: .month, value: 1, to: start) else { return }
         let pred = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        let events = store.events(matching: pred)
+        // 只读日历的事件不进列表：订阅的「中国大陆节假日」（里面还带二十四节气）、
+        // 通讯录生日这类日历改不了也删不了，而且节日/节气我们自己在格子里画了 ——
+        // 混进来只是把「霜降」重复成一条全天日程，还配一个删不掉的 ×。
+        // （2026-10-21 Dean 指着「全天 霜降」要求过滤）
+        let events = store.events(matching: pred).filter { e in
+            guard Self.shouldList(allowsContentModifications: e.calendar?.allowsContentModifications)
+            else { return false }
+            // 全天 + 标题正好是那天我们自己画的节气/节日 → 同一条信息的重复呈现。
+            // 节假日订阅日历被导入成本地可写日历时，靠只读判断挡不住，靠这条兜。
+            if e.isAllDay, Self.duplicatesOwnLabel(title: e.title ?? "", on: e.startDate) {
+                return false
+            }
+            return true
+        }
         var map: [String: [EventItem]] = [:]
         for e in events {
             let dc = cal.dateComponents([.year, .month, .day], from: e.startDate)
@@ -171,6 +184,38 @@ public final class EventProvider: ObservableObject {
             map[key] = Self.collapseDuplicates(map[key] ?? [])
         }
         cached = map
+    }
+
+    /// 这条事件该不该出现在日程列表里。
+    ///
+    /// 只读日历一律不列：订阅的「中国大陆节假日」（里面还带二十四节气）、
+    /// 通讯录生日日历都属于这类 —— 既改不了也删不了，而且节日/节气我们
+    /// 自己在格子里画了，混进来只是把「霜降」重复成一条全天日程，
+    /// 还配一个删不掉的 ×。（2026-10-21 Dean 指着「全天 霜降」要求过滤）
+    ///
+    /// 抽成纯函数是为了能单测：`EKEvent` / `EKCalendar` 在测试里造不出来。
+    public static func shouldList(allowsContentModifications: Bool?) -> Bool {
+        allowsContentModifications ?? false
+    }
+
+    /// 这条全天事件的标题，是不是正好等于那天我们自己在格子里画的节气/节日。
+    ///
+    /// 那种事件是同一件事的第二次呈现：格子里已经有「霜降」两个橙字，
+    /// 下面再列一条「全天 霜降」纯属重复，还配一个删不掉的 ×。
+    /// 只判全天事件 —— 用户自己定一个 09:00「霜降」的提醒，那是他的事。
+    public static func duplicatesOwnLabel(title: String, on date: Date,
+                                          calendar: Calendar = Calendar(identifier: .gregorian)) -> Bool {
+        guard !title.isEmpty else { return false }
+        if let term = SolarTerm.on(date: date, calendar: calendar)?.description, term == title {
+            return true
+        }
+        let m = calendar.component(.month, from: date)
+        let d = calendar.component(.day, from: date)
+        if let f = Festival.solarFestival(month: m, day: d), f == title { return true }
+        if let f = Festival.lunarFestival(of: LunarCalendar.lunarDate(from: date)), f == title {
+            return true
+        }
+        return false
     }
 
     private static func key(of date: Date) -> String {
@@ -219,7 +264,10 @@ public final class EventProvider: ObservableObject {
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return "日期无效" }
         let pred = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
         let list = store.events(matching: pred)
-        var out = "\(date) 共 \(list.count) 条事件\n"
+        let hidden = list.filter { !($0.calendar?.allowsContentModifications ?? false) }.count
+        var out = "\(date) 共 \(list.count) 条事件"
+        if hidden > 0 { out += "（其中 \(hidden) 条在只读日历里，列表里已隐藏）" }
+        out += "\n"
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "HH:mm"
@@ -227,6 +275,8 @@ public final class EventProvider: ObservableObject {
             out += "  \(i + 1). 「\(e.title ?? "(无标题)")」 \(df.string(from: e.startDate))–\(df.string(from: e.endDate))"
             out += " 日历=\(e.calendar?.title ?? "?")"
             out += " 全天=\(e.isAllDay ? "是" : "否")"
+            // 只读的要标出来：它不会出现在详情卡里，排查时别当成「丢了」
+            if !(e.calendar?.allowsContentModifications ?? false) { out += " 只读=已隐藏" }
             out += " id=\(e.eventIdentifier ?? "-")\n"
         }
         return out

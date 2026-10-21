@@ -206,4 +206,33 @@ final class ImportAndDigestTests: XCTestCase {
         XCTAssertFalse(p.events(on: day).contains { $0.localID == ev.id })
         XCTAssertEqual(p.localEvents.count, before, "删完不该有残留")
     }
+
+    /// 只读日历的事件不列进日程（订阅的节假日/节气、通讯录生日）。
+    /// 判据是 `EKCalendar.allowsContentModifications`：拿不到日历也算不列。
+    func testReadOnlyCalendarEventsAreNotListed() {
+        XCTAssertFalse(EventProvider.shouldList(allowsContentModifications: false),
+                       "订阅日历（节假日/节气）不该出现在日程列表里")
+        XCTAssertFalse(EventProvider.shouldList(allowsContentModifications: nil),
+                       "查不到日历信息时按不可删处理，宁可不显示")
+        XCTAssertTrue(EventProvider.shouldList(allowsContentModifications: true),
+                      "可写日历的事件照常显示")
+    }
+
+    /// 全天事件标题正好等于当天我们画的节气/节日 → 是重复呈现，不列。
+    func testAllDayEventMatchingOwnLabelIsDropped() {
+        // PROVENANCE: lunar-python 1.4.8 逐日 getJieQi/getLunar 对账 —— 2026-10-23=霜降、10-24=无节气、10-18=农历九月初九（重阳）
+        let cal = Calendar(identifier: .gregorian)
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+            cal.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+        }
+        // 三个日期都取自 Dean 截图里真实出现过的那几天
+        XCTAssertTrue(EventProvider.duplicatesOwnLabel(title: "霜降", on: day(2026, 10, 23)),
+                      "2026-10-23 是霜降，订阅日历里那条全天事件应被过滤")
+        XCTAssertTrue(EventProvider.duplicatesOwnLabel(title: "国庆", on: day(2026, 10, 1)))
+        XCTAssertTrue(EventProvider.duplicatesOwnLabel(title: "重阳", on: day(2026, 10, 18)))
+        XCTAssertFalse(EventProvider.duplicatesOwnLabel(title: "霜降", on: day(2026, 10, 24)),
+                       "换一天就不该匹配，否则会误删用户自己建的日程")
+        XCTAssertFalse(EventProvider.duplicatesOwnLabel(title: "开会", on: day(2026, 10, 23)))
+        XCTAssertFalse(EventProvider.duplicatesOwnLabel(title: "", on: day(2026, 10, 23)))
+    }
 }
