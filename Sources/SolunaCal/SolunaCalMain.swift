@@ -132,11 +132,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 contentRect: NSRect(x: 200, y: 200, width: 320, height: 420),
                 styleMask: [.titled], backing: .buffered, defer: false)
             win.title = "Soluna Preview"
-            win.contentViewController = NSHostingController(
-                rootView: CalendarPopoverView(store: store))
+            host(CalendarPopoverView(store: store), in: win)
             win.center()
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        // 调试预览：--preview-panel=<settings|event|year|yiji|fallback|onboarding>
+        // 按真实窗口路径（CloseableWindow + host()）打开面板，带 --out=<path> 时
+        // 等布局完成后把内容渲染成 PNG 再退出——不依赖 screencapture / 激活 / 多屏坐标。
+        // 用途：窗口承载出问题时无头复现（设置页曾被压成只剩标题一条）。
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--preview-panel=") }) {
+            let name = String(flag.dropFirst("--preview-panel=".count))
+            LaunchLog.write("预览模式（--preview-panel=\(name)）")
+            NSApp.setActivationPolicy(.regular)
+            func show<V: View>(_ title: String, _ size: NSSize, _ view: V) {
+                // 直接走生产路径：验的就是真路径，避免诊断代码与实现各写一份而分叉
+                var slot: NSWindow?
+                present(&slot, title: title, size: size, view: view)
+                guard let w = slot,
+                      let outFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--out=") })
+                else { return }
+                let out = String(outFlag.dropFirst("--out=".count))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    guard let view = w.contentView else { print("no-content-view"); exit(1) }
+                    print("panel=\(name) contentView=\(view.bounds.size) window=\(w.frame.size)")
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                        print("capture-failed"); exit(1)
+                    }
+                    view.cacheDisplay(in: view.bounds, to: rep)   // 少了这步拿到的是空白位图
+                    guard let png = rep.representation(using: .png, properties: [:]) else {
+                        print("capture-failed"); exit(1)
+                    }
+                    try? png.write(to: URL(fileURLWithPath: out))
+                    print("captured:", out)
+                    exit(0)
+                }
+            }
+            switch name {
+            case "event":
+                show("新建日程", NSSize(width: 360, height: 210),
+                     EventEditorView(date: Date()) {} onClose: {})
+            case "year":
+                let y = Calendar(identifier: .gregorian).component(.year, from: Date())
+                show("\(y) 年", NSSize(width: 420, height: 560),
+                     YearOverviewView(year: y, digest: YearDigest.build(year: y) { _, _ in nil },
+                                      onPick: { _ in }) {})
+            case "yiji":
+                let d = Date()
+                let yj = Yiji.on(date: d) ?? (yi: "嫁娶 纳采 订盟", ji: "探病 伐木")
+                show("宜忌", NSSize(width: 380, height: 320),
+                     YijiSheet(date: d, yi: yj.yi, ji: yj.ji) {})
+            case "fallback":
+                show("SolunaCal", NSSize(width: 340, height: 600),
+                     FallbackWindowView(store: store, hotKeyText: HotKeyManager.saved.display) {})
+            case "onboarding":
+                show("欢迎使用 Soluna", NSSize(width: 420, height: 320),
+                     OnboardingView(hotKeyText: HotKeyManager.saved.display) {})
+            default:
+                show("SolunaCal 设置", NSSize(width: 440, height: 660),
+                     SettingsView(store: store))
+            }
             return
         }
 
@@ -392,15 +449,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "SolunaCal"
         wc.window?.delegate = self
-        let hosting = NSHostingController(rootView: view)
-        hosting.sizingOptions = [.preferredContentSize]
-        wc.window?.contentViewController = hosting
         wc.window?.isReleasedWhenClosed = false
+        // 先量理想高度，再按它收窗口（兜底窗口要贴合内容，不是固定 600）
+        let ideal = NSHostingView(rootView: view).fittingSize
+        if let win = wc.window { host(view, in: win) }
         wc.showWindow(nil)
         // 内容高度要等布局完成才知道：下一拍按理想尺寸收一下窗口
         DispatchQueue.main.async {
-            let h = hosting.preferredContentSize.height
-            if h > 0 { wc.window?.setContentSize(NSSize(width: 340, height: h)) }
+            if ideal.height > 0 {
+                wc.window?.setContentSize(NSSize(width: 340, height: ideal.height))
+            }
             wc.window?.center()
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -429,6 +487,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return v
     }
 
+    /// 把 SwiftUI 视图装进窗口，并让内容始终填满内容区。
+    ///
+    /// 不要用 NSHostingController 当 contentViewController：它会把窗口收缩到
+    /// 内容的「理想尺寸」，而 ScrollView 的理想高度是 0 —— 设置页因此被压成
+    /// 只剩标题一条（实测 440×660 的窗口被压成 440×65，内容视图 440×37，
+    /// 就是「点设置只有一行字」的那个 bug）。NSHostingView 直接当 contentView
+    /// 并开自适应，内容才会真正填满窗口。
+    private func host<V: View>(_ view: V, in window: NSWindow) {
+        let hv = NSHostingView(rootView: view)
+        hv.frame = NSRect(origin: .zero, size: window.contentLayoutRect.size)
+        hv.autoresizingMask = [.width, .height]
+        window.contentView = hv
+    }
+
     /// 统一的窗口呈现：已存在就前置，避免重复开
     private func present<C: View>(_ slot: inout NSWindow?, title: String,
                                   size: NSSize, view: C) {
@@ -437,12 +509,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+        // 尺寸在创建时就算准，别让窗口先开成声明尺寸再被内容收缩（会看到跳一下）：
+        // 内容比窗口小 → 收成内容尺寸（不留大片空白）；
+        // 内容带 ScrollView → 理想高度会大于声明值，按声明值截断（窗口固定、内部滚动）
+        let fitting = NSHostingView(rootView: view).fittingSize
+        let target = NSSize(width: min(size.width, max(fitting.width, 1)),
+                            height: min(size.height, max(fitting.height, 1)))
         // CloseableWindow：配件 App 没有「窗口」菜单，⌘W 走菜单那条路不通，
         // 直接在窗口里把 Esc / ⌘W 接成关窗，和其他 Mac 应用行为一致
-        let w = CloseableWindow(contentRect: NSRect(origin: .zero, size: size),
+        let w = CloseableWindow(contentRect: NSRect(origin: .zero, size: target),
                                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = title
-        w.contentViewController = NSHostingController(rootView: view)
+        host(view, in: w)
         w.isReleasedWhenClosed = false
         w.delegate = self
         w.center()
@@ -582,8 +660,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "欢迎使用 Soluna"
         wc.window?.delegate = self
-        wc.window?.contentViewController = NSHostingController(
-            rootView: OnboardingView(hotKeyText: HotKeyManager.saved.display) {
+        if let win = wc.window {
+            host(OnboardingView(hotKeyText: HotKeyManager.saved.display) {
                 Onboarding.markCompleted()
                 // 引导里可能刚打开提醒：立刻排期，别等下一次启动
                 NotificationManager.reschedule(store: self.store)
@@ -598,7 +676,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         self.flashStatusItem()
                     }
                 }
-            })
+            }, in: win)
+        }
         wc.window?.center()
         wc.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
