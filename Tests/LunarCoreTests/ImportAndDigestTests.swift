@@ -151,4 +151,42 @@ final class ImportAndDigestTests: XCTestCase {
         let b = item("站会", calendar: "工作", minute: 30)
         XCTAssertEqual(EventProvider.collapseDuplicates([a, b]).count, 2)
     }
+
+    // MARK: 本机日程（没授权系统日历时的落地存储）
+
+    func testLocalEventSurvivesJSONRoundTrip() throws {
+        // 存本机的东西必须能原样读回来，否则重启一次就丢
+        let ev = EventProvider.LocalEvent(title: "交房租", dayKey: "2026-10-21",
+                                          start: Date(timeIntervalSince1970: 1_800_000_000))
+        let data = try JSONEncoder().encode([ev])
+        let back = try JSONDecoder().decode([EventProvider.LocalEvent].self, from: data)
+        XCTAssertEqual(back.count, 1)
+        XCTAssertEqual(back[0].id, ev.id)
+        XCTAssertEqual(back[0].title, "交房租")
+        XCTAssertEqual(back[0].dayKey, "2026-10-21")
+        XCTAssertEqual(back[0].start, ev.start)
+    }
+
+    func testMergePutsSystemAndLocalOnOneTimeline() {
+        // 系统日历的条目和本机条目要按时间混排，不能分成两组各排各的
+        let sys = EventProvider.EventItem(id: "s1", title: "站会",
+                                          start: Date(timeIntervalSince1970: 600),
+                                          calendarTitle: "工作", isAllDay: false)
+        let local = EventProvider.EventItem(id: "l1", title: "交房租",
+                                            start: Date(timeIntervalSince1970: 300),
+                                            calendarTitle: "本机", isAllDay: false, localID: UUID())
+        let out = EventProvider.merge([sys], [local])
+        XCTAssertEqual(out.map(\.title), ["交房租", "站会"])
+        XCTAssertNotNil(out[0].localID, "本机的要留着 id，否则右键删不掉")
+        XCTAssertNil(out[1].localID, "系统日历的条目不给删，它归「日历」App 管")
+    }
+
+    func testMergeHandlesEmptySides() {
+        let one = EventProvider.EventItem(id: "s1", title: "站会",
+                                          start: Date(timeIntervalSince1970: 0),
+                                          calendarTitle: "工作", isAllDay: false)
+        XCTAssertEqual(EventProvider.merge([], [one]).count, 1)
+        XCTAssertEqual(EventProvider.merge([one], []).count, 1)
+        XCTAssertTrue(EventProvider.merge([], []).isEmpty)
+    }
 }

@@ -315,6 +315,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             runPanelCloseSimulation()
             return
         }
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--simulate-local-event=") }) {
+            runLocalEventSimulation(String(flag.dropFirst("--simulate-local-event=".count)))
+            return
+        }
 
         // 上次自动更新失败的话，必须让用户知道（脚本会在 Application Support 留记录）。
         // 静默失败的代价是「点完更新图标没了，还以为 App 坏了」——0.4.3 真实事故。
@@ -571,8 +575,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// 弹窗/兜底窗口共用同一份视图装配：模态一律走独立窗口，视图里不再有 sheet
-    private func makePopoverView(fixedHeight: Bool, initialMonth: Date? = nil) -> CalendarPopoverView {
-        var v = CalendarPopoverView(store: store, initialMonth: initialMonth, fixedHeight: fixedHeight)
+    private func makePopoverView(fixedHeight: Bool, initialMonth: Date? = nil,
+                                 initialSelected: Date? = nil) -> CalendarPopoverView {
+        var v = CalendarPopoverView(store: store, initialMonth: initialMonth,
+                                    initialSelected: initialSelected, fixedHeight: fixedHeight)
         v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
         v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
         v.onOpenYear = { [weak self] month in self?.showYearWindow(containing: month) }
@@ -806,22 +812,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// 把任意视图渲染成 PNG 并退出。缺 cacheDisplay 那步拿到的是空白位图。
-    private func captureViewAndExit(_ view: NSView, tag: String) {
+    /// 把视图渲染成 PNG，返回写出的路径（失败返回 nil）。缺 cacheDisplay 那步拿到的是空白位图。
+    private func writePNG(of view: NSView) -> String? {
         guard let outFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--out=") }) else {
-            print("missing --out"); exit(1)
+            print("missing --out"); return nil
         }
         let out = String(outFlag.dropFirst("--out=".count))
+        // 先把布局和绘制跑完再抓：SwiftUI 的文字是各自成层的，
+        // 弹窗刚弹出时直接 cacheDisplay 会抓到「部分数字还没画上去」的半成品
+        // （实测同一份视图两次抓图缺的数字不一样，是竞态不是布局错）。
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-            print("capture-failed"); exit(1)
+            print("capture-failed"); return nil
         }
         view.cacheDisplay(in: view.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else {
-            print("capture-failed"); exit(1)
+            print("capture-failed"); return nil
         }
         try? png.write(to: URL(fileURLWithPath: out))
         print("captured:", out, view.bounds.size)
+        return out
+    }
+
+    private func captureViewAndExit(_ view: NSView, tag: String) {
+        if writePNG(of: view) == nil { exit(1) }
         exit(0)
+    }
+
+    /// `--simulate-local-event=YYYY-MM-DD --out=x.png`
+    /// 证明「没授权也能记」：写一条本机日程，把弹窗停在当天并选中，
+    /// 看月历圆点 + 详情卡里的「本机」标记。跑完把测试数据删掉，不留痕。
+    private func runLocalEventSimulation(_ raw: String) {
+        let parts = raw.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3,
+              let day = Calendar(identifier: .gregorian).date(
+                  from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+        else { print("用法：--simulate-local-event=YYYY-MM-DD --out=<png>"); exit(2) }
+
+        let ev = EventProvider.shared.addLocalEvent(title: "本机测试", on: day)
+        print("local-event added dayKey=\(ev.dayKey) total=\(EventProvider.shared.localEvents.count)")
+        showPopover(startingAt: day, selected: day)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            print("local-event hasEvent=\(EventProvider.shared.hasEvent(on: day))")
+            print("local-event listed=\(EventProvider.shared.events(on: day).map { $0.title })")
+            guard let view = self.popover.contentViewController?.view else {
+                print("no-popover-view"); exit(1)
+            }
+            let ok = self.writePNG(of: view) != nil
+            EventProvider.shared.removeLocalEvent(id: ev.id)   // 清掉测试数据，别污染真实日程
+            print("local-event cleaned total=\(EventProvider.shared.localEvents.count)")
+            exit(ok ? 0 : 1)
+        }
     }
 
     /// 把弹窗的内容视图渲染成 PNG
@@ -874,9 +916,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// （朋友 B 报的「再次點擊也不會刷新到最新的日期位置」）。
     /// 重建顺带解决了「年视图选完月份」—— 目标月份直接当初始值传进来，
     /// 不靠通知：弹窗没显示时 SwiftUI 的 onReceive 还没订阅上，通知会丢。
-    private func showPopover(startingAt month: Date? = nil) {
+    private func showPopover(startingAt month: Date? = nil, selected: Date? = nil) {
         guard let button = statusItem.button else { return }
-        let view = makePopoverView(fixedHeight: true, initialMonth: month ?? Date())
+        let view = makePopoverView(fixedHeight: true, initialMonth: month ?? Date(),
+                                   initialSelected: selected)
         let hc = NSHostingController(rootView: view)
         hc.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hc

@@ -31,9 +31,87 @@ public final class EventProvider: ObservableObject {
         public let start: Date
         public let calendarTitle: String
         public let isAllDay: Bool
+        /// 只存在本机（没授权系统日历时写的那条）。列表里要标出来，
+        /// 而且只有这种能删——系统日历的条目归「日历」App 管。
+        public let localID: UUID?
+
+        public init(id: String, title: String, start: Date, calendarTitle: String,
+                    isAllDay: Bool, localID: UUID? = nil) {
+            self.id = id
+            self.title = title
+            self.start = start
+            self.calendarTitle = calendarTitle
+            self.isAllDay = isAllDay
+            self.localID = localID
+        }
     }
 
-    private init() {}
+    private init() {
+        // 启动就同步读一次授权状态：等 requestFullAccessToEvents 的回调太晚，
+        // 用户一开 App 就双击建日程时，编辑器会先按「未授权」显示错误文案。
+        authorized = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        if let data = UserDefaults.standard.data(forKey: Self.localKey),
+           let list = try? JSONDecoder().decode([LocalEvent].self, from: data) {
+            localEvents = list
+        }
+    }
+
+    // MARK: 本机日程（未授权系统日历时的落地存储）
+
+    /// 本机日程。写系统日历要授权，但「不授权」不等于「不能用」——
+    /// 用户在这里记下的东西必须有地方去，否则整个新建日程功能等于废掉
+    /// （0.4.8 之前就是这样：点保存只弹「写入失败：未授权系统日历」）。
+    public struct LocalEvent: Codable, Identifiable, Equatable {
+        public var id: UUID
+        public var title: String
+        /// 与事件缓存同格式 "yyyy-M-d"，跨时区不跑偏
+        public var dayKey: String
+        public var start: Date
+
+        public init(id: UUID = UUID(), title: String, dayKey: String, start: Date) {
+            self.id = id
+            self.title = title
+            self.dayKey = dayKey
+            self.start = start
+        }
+    }
+
+    private static let localKey = "localEvents.v1"
+    /// 标记 @Published：保存/删除后月历圆点与详情卡立刻跟着变
+    @Published public private(set) var localEvents: [LocalEvent] = []
+
+    /// 能否写进系统日历：既要有权限，也要有可写的默认日历。
+    /// 两者缺一都只能存本机，界面按这个值决定提示文案。
+    public var canWriteToSystem: Bool {
+        authorized && store.defaultCalendarForNewEvents != nil
+    }
+
+    /// 保存一条本机日程（9:00 开始，与系统日历那条的时间口径一致）
+    @discardableResult
+    public func addLocalEvent(title: String, on date: Date) -> LocalEvent {
+        let cal = Calendar(identifier: .gregorian)
+        let start = cal.date(bySettingHour: 9, minute: 0, second: 0, of: date) ?? date
+        let ev = LocalEvent(title: title, dayKey: Self.key(of: date), start: start)
+        localEvents.append(ev)
+        persistLocal()
+        return ev
+    }
+
+    public func removeLocalEvent(id: UUID) {
+        localEvents.removeAll { $0.id == id }
+        persistLocal()
+    }
+
+    private func persistLocal() {
+        if let data = try? JSONEncoder().encode(localEvents) {
+            UserDefaults.standard.set(data, forKey: Self.localKey)
+        }
+    }
+
+    /// 系统事件 + 本机事件合成一条时间轴。纯函数，方便钉测试。
+    static func merge(_ system: [EventItem], _ local: [EventItem]) -> [EventItem] {
+        (system + local).sorted { $0.start < $1.start }
+    }
 
     /// 是否已获系统日历授权（驱动「授权后显示」提示文案）；也标记 @Published
     @Published public private(set) var authorized = false
@@ -82,8 +160,9 @@ public final class EventProvider: ObservableObject {
     }
 
     public func hasEvent(on date: Date) -> Bool {
-        guard authorized else { return false }
-        return cached[Self.key(of: date)] != nil
+        let k = Self.key(of: date)
+        if authorized, cached[k] != nil { return true }
+        return localEvents.contains { $0.dayKey == k }
     }
 
     /// 去掉完全相同的条目（同标题 + 同开始时间 + 同日历）。
@@ -100,10 +179,16 @@ public final class EventProvider: ObservableObject {
         return out
     }
 
-    /// 当日事件（只读；无授权/无事件 = 空）
+    /// 当日事件：系统日历（已授权时）+ 本机日程，按时间排一条轴。
+    /// 本机的条目 calendarTitle 写「本机」，用户在列表里能一眼看出它没进系统日历。
     public func events(on date: Date) -> [EventItem] {
-        guard authorized else { return [] }
-        return (cached[Self.key(of: date)] ?? []).sorted { $0.start < $1.start }
+        let k = Self.key(of: date)
+        let system = authorized ? (cached[k] ?? []) : []
+        let local = localEvents
+            .filter { $0.dayKey == k }
+            .map { EventItem(id: $0.id.uuidString, title: $0.title, start: $0.start,
+                             calendarTitle: "本机", isAllDay: false, localID: $0.id) }
+        return Self.merge(system, local)
     }
 
     /// 诊断：某天系统日历里到底有几条事件，各自属于哪个日历。
@@ -127,14 +212,20 @@ public final class EventProvider: ObservableObject {
         return out
     }
 
-    /// 写入：在指定日创建 1 小时事件（二期双击创建；macOS 14 fullAccess 含写权限）
-    /// 失败抛出具体错误（无权限 / 无默认日历 / 系统拒绝），调用方负责提示
-    public func addEvent(title: String, on date: Date) throws {
-        guard authorized else { throw NSError(domain: "SolunaCal", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "未授权系统日历"]) }
-        guard let target = store.defaultCalendarForNewEvents else {
-            throw NSError(domain: "SolunaCal", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "系统日历没有可写入的日历"])
+    /// 保存结果：进了系统日历，还是只落在本机
+    public enum SaveTarget { case system, local }
+
+    /// 写入：优先系统日历；没权限 / 没有可写的默认日历 → 存本机。
+    ///
+    /// 以前这里 `guard authorized else { throw }`，未授权时点保存只弹
+    /// 「写入失败：未授权系统日历」，用户输入直接丢弃。拒绝授权是很常见的
+    /// 选择（系统问的是「完全访问日历」这种强权限），不该让功能整个不可用。
+    /// 系统日历本身写入失败（磁盘/账户异常）仍然抛出，那种错误要让人看见。
+    @discardableResult
+    public func addEvent(title: String, on date: Date) throws -> SaveTarget {
+        guard canWriteToSystem, let target = store.defaultCalendarForNewEvents else {
+            addLocalEvent(title: title, on: date)
+            return .local
         }
         let cal = Calendar(identifier: .gregorian)
         let start = cal.date(bySettingHour: 9, minute: 0, second: 0, of: date)!
@@ -148,6 +239,7 @@ public final class EventProvider: ObservableObject {
         ev.addAlarm(EKAlarm(relativeOffset: -10 * 60))
         try store.save(ev, span: .thisEvent)
         refresh(year: cal.component(.year, from: date), month: cal.component(.month, from: date))
+        return .system
     }
 }
 

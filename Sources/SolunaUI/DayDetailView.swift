@@ -104,13 +104,13 @@ public struct DayDetailView: View {
 
             if events.isEmpty {
                 HStack(spacing: 6) {
-                    if EventProvider.shared.authorized {
+                    if EventProvider.shared.canWriteToSystem {
                         Text("当日无日程").font(.system(size: 10)).foregroundStyle(.tertiary)
                         Text("· 双击日期可添加").font(.system(size: 10)).foregroundStyle(.tertiary)
                     } else {
-                        // 更新一次系统就会重问一次（ad-hoc 签名的 DR 就是二进制哈希），
-                        // 所以这里给按钮，而不是让人自己去系统设置里找
-                        Text("需要授权系统日历（更新后会重新询问）")
+                        // 没授权也能记，只是存在本机。这里把差别讲清楚，
+                        // 再给一个授权入口（更新一次系统就会重问一次，ad-hoc 签名的 DR 是二进制哈希）
+                        Text("未授权系统日历 · 新日程只存本机")
                             .font(.system(size: 10)).foregroundStyle(.tertiary)
                             .lineLimit(1)
                         Button("授权") { onRequestAccess() }
@@ -128,11 +128,20 @@ public struct DayDetailView: View {
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Text(item.title).font(.system(size: 11)).lineLimit(1)
-                        if events.count > 1, item.calendarTitle != "?" {
+                        // 本机的始终标出来：它没进系统日历，用户得知道
+                        if item.localID != nil || (events.count > 1 && item.calendarTitle != "?") {
                             Text(item.calendarTitle)
                                 .font(.system(size: 9))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
+                        }
+                    }
+                    // 系统日历的条目归「日历」App 管，这里只给本机的删
+                    .contextMenu {
+                        if let lid = item.localID {
+                            Button("删除这条本机日程", role: .destructive) {
+                                EventProvider.shared.removeLocalEvent(id: lid)
+                            }
                         }
                     }
                 }

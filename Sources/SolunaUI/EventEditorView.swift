@@ -47,7 +47,7 @@ public struct EventEditorView: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
 
-            Text("写入系统「日历」的默认日历：当天 9:00–10:00，开始前 10 分钟提醒。")
+            Text(hintText)
                 .font(.caption).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -62,6 +62,14 @@ public struct EventEditorView: View {
         .padding(14)
         .frame(width: 340)
         .onAppear { focused = true }
+    }
+
+    /// 写去哪，取决于能不能写系统日历。文案必须说实话：
+    /// 本机那条既不进系统「日历」，也不会有提醒，不能让用户以为一样。
+    private var hintText: String {
+        EventProvider.shared.canWriteToSystem
+            ? "写入系统「日历」的默认日历：当天 9:00–10:00，开始前 10 分钟提醒。"
+            : "没拿到系统日历权限，只保存在本机：当天 9:00，不会出现在系统「日历」里，也不会提醒。"
     }
 
     private func save() {
