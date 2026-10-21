@@ -80,6 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var onboardingWindow: NSWindow?
     private var timer: Timer?
     private var hoverTimer: Timer?
+    /// 弹窗是因为「点了面板入口」才收起来的：面板关掉后要把它还回去。
+    /// 否则从日历点进年视图/宜忌/新建日程，关掉面板就只剩桌面——
+    /// 和 B 报的「点完就没了」是同一类体验。
+    private var restorePopoverOnPanelClose = false
+    /// 退出过程中窗口关闭不该再把弹窗弹出来
+    private var isTerminating = false
     private let store = BirthdayStore()
 
     /// 菜单栏形态（0=纯文字 1=图标+文字 2=纯图标）。
@@ -201,14 +207,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case "onboarding":
                 show("欢迎使用 Soluna", NSSize(width: 420, height: 320),
                      OnboardingView(hotKeyText: HotKeyManager.saved.display) {})
-            case "onboarding-name":
-                // 第 2 屏（index 1）是品牌名解释，单独留一个入口方便核对排版
-                show("欢迎使用 Soluna", NSSize(width: 420, height: 320),
-                     OnboardingView(initialPage: 1, hotKeyText: HotKeyManager.saved.display) {})
-            case "settings-tall":
-                // 加高版：只为看页脚（版本号 + 品牌名解释），真实窗口是 660 高、内容靠滚动
-                show("SolunaCal 设置", NSSize(width: 440, height: 1000),
-                     SettingsView(store: store))
             default:
                 show("SolunaCal 设置", NSSize(width: 440, height: 660),
                      SettingsView(store: store))
@@ -307,6 +305,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if CommandLine.arguments.contains("--simulate-reopen") {
             runReopenSimulation()
+            return
+        }
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--simulate-year-open=") }) {
+            runYearOpenSimulation(String(flag.dropFirst("--simulate-year-open=".count)))
+            return
+        }
+        if CommandLine.arguments.contains("--simulate-panel-close") {
+            runPanelCloseSimulation()
             return
         }
 
@@ -526,7 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let view = FallbackWindowView(store: store,
                                       hotKeyText: HotKeyManager.saved.display,
                                       onRequestSettings: { [weak self] in self?.showSettingsWindow() },
-                                      onRequestYear: { [weak self] in self?.showYearWindow() },
+                                      onRequestYear: { [weak self] in self?.showYearWindow(containing: Date()) },
                                       onEditEvent: { [weak self] day in self?.showEventEditor(day) },
                                       onOpenYiji: { [weak self] day in self?.showYijiWindow(day) }) { [weak self] in
             self?.fallbackWindow?.close()
@@ -569,7 +575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var v = CalendarPopoverView(store: store, initialMonth: initialMonth, fixedHeight: fixedHeight)
         v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
         v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
-        v.onOpenYear = { [weak self] in self?.showYearWindow() }
+        v.onOpenYear = { [weak self] month in self?.showYearWindow(containing: month) }
         v.onOpenYiji = { [weak self] day in self?.showYijiWindow(day) }
         return v
     }
@@ -620,6 +626,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func dismissPopover() {
         guard popover != nil, popover.isShown else { return }
         popover.performClose(nil)
+        // 记下来：这个面板是从弹窗点进去的，关掉它要把弹窗还回去。
+        // 弹窗本来就没开（比如从兜底窗口操作）时不置位，关面板就只关面板。
+        restorePopoverOnPanelClose = true
     }
 
     /// 窗口被关掉时清槽位：只靠 onClose 回调管不住「点红钮 / ⌘W」这两条路。
@@ -636,6 +645,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onboardingWindow = nil
             // 引导被红钮关掉等同「跳过」：不留着每次启动重弹
             Onboarding.markCompleted()
+        }
+        // 面板是从弹窗点进来的 → 关掉后把弹窗还回去，别让用户对着桌面发愣。
+        // 红钮 / ⌘W / 面板自己的关闭按钮都汇到这里，所以只需要在这一个地方接。
+        if restorePopoverOnPanelClose, !isTerminating {
+            restorePopoverOnPanelClose = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTerminating else { return }
+                self.showPopover()
+            }
         }
     }
 
@@ -659,9 +677,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 })
     }
 
-    private func showYearWindow() {
+    /// `month` 决定年视图显示哪一年 —— 取弹窗正在浏览的那个月，不是「今天」。
+    /// 原先写死 `from: Date()`，翻到 2027 年 1 月点标题，打开的还是 2026 年，
+    /// 点「1 月」又被送回 2026-01：这正是朋友 B 说的「時間容易混淆」。
+    private func showYearWindow(containing month: Date) {
         dismissPopover()
-        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
+        let year = Calendar(identifier: .gregorian).component(.year, from: month)
         present(&yearWindow, title: "\(year) 年", size: NSSize(width: 420, height: 560),
                 view: YearOverviewView(
                     year: year,
@@ -684,6 +705,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func jumpToMonth(year: Int, month: Int) {
         let c = DateComponents(year: year, month: month, day: 1)
         let target = Calendar(identifier: .gregorian).date(from: c)
+        // 下面自己会把弹窗打开，所以先撤掉「关窗后还弹窗」的标记 ——
+        // 否则 windowWillClose 会再排一次 showPopover()（回到今天），
+        // 把刚跳到的月份覆盖掉。
+        restorePopoverOnPanelClose = false
         // 年窗口在 onPick 之后自己会关（YearOverviewView 里紧跟 closeWindow），
         // 但弹窗不会自己回来 —— 不显式重开，用户点完月份屏幕上什么都不剩
         // （朋友 B 报的「點擊某個月跳轉會消失」，录屏里点「1 月」后一片空白）。
@@ -702,9 +727,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             print("用法：--simulate-year-pick=YYYY-MM --out=<png>")
             exit(2)
         }
-        showYearWindow()
+        showYearWindow(containing: Date())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            // 顺序必须和真实点击一致：YearOverviewView 的 onTapGesture 是
+            // `onPick(month); closeWindow()` —— 先触发跳转，再同步关掉年窗口，
+            // 弹窗在下一轮 runloop 才弹出。少了 closeWindow 这一步，测的就不是
+            // B 遇到的场景（他报的正是「点完屏幕上什么都没出现」）。
             self.jumpToMonth(year: y, month: m)
+            self.yearWindow?.close()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 self.capturePopoverAndExit(tag: "year-pick")
             }
@@ -733,12 +763,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// 把弹窗的内容视图渲染成 PNG。缺 cacheDisplay 那步拿到的是空白位图。
-    private func capturePopoverAndExit(tag: String) {
-        print("\(tag) popoverShown=\(popover.isShown)")
-        guard let view = popover.contentViewController?.view else {
-            print("no-popover-view"); exit(1)
+    /// `--simulate-year-open=YYYY-MM --out=x.png`
+    /// 证明「年视图按弹窗正在浏览的月份打开」：先把弹窗停在指定月份，再走
+    /// `showYearWindow(containing:)` 的真实路径，把年窗口渲染出来并打印标题。
+    private func runYearOpenSimulation(_ raw: String) {
+        let parts = raw.split(separator: "-")
+        guard parts.count == 2, let y = Int(parts[0]), let m = Int(parts[1]),
+              let month = Calendar(identifier: .gregorian)
+                  .date(from: DateComponents(year: y, month: m, day: 1)) else {
+            print("用法：--simulate-year-open=YYYY-MM --out=<png>")
+            exit(2)
         }
+        showPopover(startingAt: month)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            self.showYearWindow(containing: month)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                guard let w = self.yearWindow, let v = w.contentView else {
+                    print("year-open no-window"); exit(1)
+                }
+                // 标题就是判据：期望「2027 年」而不是今天的「2026 年」
+                print("year-open windowTitle=\(w.title)")
+                self.captureViewAndExit(v, tag: "year-open")
+            }
+        }
+    }
+
+    /// `--simulate-panel-close --out=x.png`
+    /// 从弹窗点进年视图、再关掉年窗口，检查弹窗有没有自己回来。
+    /// 这条对应「点完就没了」那一族：面板关掉不该只剩桌面。
+    private func runPanelCloseSimulation() {
+        showPopover()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            print("panel-close before-open popoverShown=\(self.popover.isShown)")
+            self.showYearWindow(containing: Date())
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                print("panel-close while-open popoverShown=\(self.popover.isShown)")
+                self.yearWindow?.close()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    self.capturePopoverAndExit(tag: "panel-close")
+                }
+            }
+        }
+    }
+
+    /// 把任意视图渲染成 PNG 并退出。缺 cacheDisplay 那步拿到的是空白位图。
+    private func captureViewAndExit(_ view: NSView, tag: String) {
         guard let outFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--out=") }) else {
             print("missing --out"); exit(1)
         }
@@ -755,6 +824,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         exit(0)
     }
 
+    /// 把弹窗的内容视图渲染成 PNG
+    private func capturePopoverAndExit(tag: String) {
+        print("\(tag) popoverShown=\(popover.isShown)")
+        guard let view = popover.contentViewController?.view else {
+            print("no-popover-view"); exit(1)
+        }
+        captureViewAndExit(view, tag: tag)
+    }
+
     private func showYijiWindow(_ day: Date) {
         dismissPopover()
         guard let yj = Yiji.on(date: day) else { return }
@@ -767,6 +845,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func quitApp() {
         LaunchLog.write("用户从菜单栏退出")
+        isTerminating = true
         NSApp.terminate(nil)
         // 看门狗：某些情况下 terminate 会被模态/窗口拖住（朋友 B 点退出没反应），
         // 1.5 秒还没退就强制结束进程。

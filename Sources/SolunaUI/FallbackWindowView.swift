@@ -66,7 +66,8 @@ public struct FallbackWindowView: View {
     private var calendar: some View {
         var popover = CalendarPopoverView(store: store, fixedHeight: false)
         popover.onOpenSettings = onRequestSettings
-        popover.onOpenYear = onRequestYear
+        // 兜底窗口没有「当前浏览月份」的概念，年视图按今天所在年份打开
+        popover.onOpenYear = { _ in onRequestYear?() }
         popover.onEditEvent = onEditEvent
         popover.onOpenYiji = onOpenYiji
         return popover

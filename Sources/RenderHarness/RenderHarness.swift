@@ -47,9 +47,7 @@ enum RenderHarnessMain {
         // 清完残留后把本 harness 管理的 key 全量显式写入（含默认值），保证单次运行自洽
         for (key, value) in flags { UserDefaults.standard.set(value, forKey: key) }
         // --select=YYYY-MM-DD：预选某日（渲染选中日区域：日程列表/干支行）
-        // --edit=YYYY-MM-DD：让某日进入就地编辑条状态（双击创建事件的编辑态）
         var initialSelected: Date?
-        var initialEditing: Date?
         func parseDay(_ flag: String) -> Date? {
             let parts = flag.split(separator: "-").compactMap { Int($0) }
             guard parts.count == 3 else { return nil }
@@ -58,9 +56,6 @@ enum RenderHarnessMain {
         }
         if let flag = args.first(where: { $0.hasPrefix("--select=") }) {
             initialSelected = parseDay(String(flag.dropFirst("--select=".count)))
-        }
-        if let flag = args.first(where: { $0.hasPrefix("--edit=") }) {
-            initialEditing = parseDay(String(flag.dropFirst("--edit=".count)))
         }
         // --format-custom：让设置页落在「自定义」格式档，渲染模板编辑器与实时预览
         if args.contains("--format-custom") {
@@ -109,7 +104,7 @@ enum RenderHarnessMain {
             hosting = NSHostingView(rootView: AnyView(
                 OnboardingView(initialPage: startPage, onFinish: {})))
         } else {
-            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth, initialSelected: initialSelected, initialEditing: initialEditing)))
+            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth, initialSelected: initialSelected)))
         }
         // --dark：强制深色外观，用于深色模式自查
         if args.contains("--dark") {

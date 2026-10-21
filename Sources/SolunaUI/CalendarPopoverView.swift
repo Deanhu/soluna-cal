@@ -10,7 +10,6 @@ import LunarCore
 public struct CalendarPopoverView: View {
     /// initialMonth：预览/测试用，可指定起始月份（如边界 1900-01 / 2099-12）
     /// initialSelected：预览/测试用，预选某日以渲染选中日区域（干支行、日程列表）
-    /// initialEditing：预览/测试用，让某日直接进入就地编辑条状态
     /// 弹窗要固定高度（避免尺寸随内容跳动）；嵌进窗口时不需要，交给窗口自适应
     private let fixedHeight: Bool
 
@@ -18,17 +17,18 @@ public struct CalendarPopoverView: View {
     // 父窗口一关 sheet 就变成关不掉的幽灵窗口，还会把 App 卡住。
     public var onOpenSettings: (() -> Void)?
     public var onEditEvent: ((Date) -> Void)?
-    public var onOpenYear: (() -> Void)?
+    /// 参数是当前正在浏览的月份：年视图要按这个月所在的年份打开，
+    /// 否则翻到 2027 年 1 月点标题，年视图永远是今年（朋友 B 的「時間容易混淆」）。
+    public var onOpenYear: ((Date) -> Void)?
     public var onOpenYiji: ((Date) -> Void)?
 
     public init(store: BirthdayStore, initialMonth: Date? = nil,
-                initialSelected: Date? = nil, initialEditing: Date? = nil,
+                initialSelected: Date? = nil,
                 fixedHeight: Bool = true) {
         self.fixedHeight = fixedHeight
         self.store = store
         _displayed = State(initialValue: initialMonth ?? Date())
         _selectedDay = State(initialValue: initialSelected)
-        _editingDay = State(initialValue: initialEditing)
     }
     @ObservedObject var store: BirthdayStore
     /// 弹窗与「新建日程」窗口是两棵视图树：不观察 EventProvider，
@@ -36,7 +36,6 @@ public struct CalendarPopoverView: View {
     @ObservedObject var eventProvider = EventProvider.shared
     @State private var displayed: Date
     @State private var selectedDay: Date?
-    @State private var editingDay: Date?
     @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
@@ -59,7 +58,7 @@ public struct CalendarPopoverView: View {
             monthGrid
             if let sel = selectedDay {
                 DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled, skin: skin,
-                              onAddEvent: { editingDay = sel },
+                              onAddEvent: { onEditEvent?(sel) },
                               onRequestAccess: {
                                   EventProvider.shared.requestAccessIfNeeded { refreshEvents() }
                               },
@@ -99,7 +98,6 @@ public struct CalendarPopoverView: View {
     private func clearSelectionOutsideDisplayed() {
         if PopoverMonthRule.shouldClearSelection(selected: selectedDay, displayed: displayed, calendar: cal) {
             selectedDay = nil
-            editingDay = nil
         }
     }
 
@@ -126,7 +124,7 @@ public struct CalendarPopoverView: View {
                 .contentShape(Rectangle())
                 .accessibilityLabel("上个月")
             Spacer()
-            Button(action: { onOpenYear?() }) {
+            Button(action: { onOpenYear?(displayed) }) {
                 HStack(spacing: 2) {
                     Text(monthTitle).font(.headline)
                     Image(systemName: "chevron.down")
@@ -244,7 +242,6 @@ public struct CalendarPopoverView: View {
         .contentShape(Rectangle())
         // 双击：打开新建日程面板（单击是选中，两个手势必须按 2 → 1 的顺序挂）
         .onTapGesture(count: 2) {
-            editingDay = cell.date
             onEditEvent?(cell.date)
         }
         .onTapGesture(count: 1) {

@@ -22,10 +22,6 @@ public struct OnboardingView: View {
     // 计算属性：描述里要带当前快捷键，而存储属性的初始化器里拿不到 self
     private var pages: [(String, String, String)] { [
         ("calendar", "一眼看清今天", "公历、农历、节气、节日，点开菜单栏就有"),
-        // 名字是生造的英文，第一次看到容易被当成拼写错误（朋友 B 拿它去问 AI，
-        // 得到的回答是「可能是拼写错误，例如 solunac」）。名字不改，这里把来源讲清楚。
-        ("moon.stars", "SolunaCal 是什么",
-         "Soluna = Sol（太阳）+ Luna（月亮），Cal = Calendar（日历）。\n合起来就是「日月历」——一套把公历、农历、节气、节日放在一起看的日历。"),
         ("party.popper", "放假补班早知道", "法定假期连成色带，调休补班灰色标记，还有倒计时"),
         ("gift", "记住农历生日", "爸妈的农历生日录一次，每年自动出现在日历上"),
         ("menubar.rectangle", "图标在屏幕右上角",
