@@ -47,252 +47,225 @@ public struct SettingsView: View {
         return "\(short) (\(build))"
     }
 
+    // MARK: 版式基准
+
+    /// 所有「n 选 1」的控件占同一列右对齐；标签左对齐。两条竖直基准线，页面才不散。
+    private let controlColumn: CGFloat = 200
+    private var labelFont: Font { .system(size: 12) }
+    private var sectionFont: Font { .system(size: 11, weight: .semibold) }
+
     public var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             HStack {
                 Text("设置").font(.headline)
                 Spacer()
                 Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("关闭")
             }
-
-            Toggle("显示宜忌（黄历）", isOn: $yijiEnabled)
-                .toggleStyle(.switch).controlSize(.small)
-            Toggle("显示放假倒计时", isOn: $countdownEnabled)
-                .toggleStyle(.switch).controlSize(.small)
-            Toggle("登录后自动启动", isOn: $launchAtLogin)
-                .toggleStyle(.switch).controlSize(.small)
-                .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
-
-            Toggle("菜单栏显示农历", isOn: $menuBarLunar)
-                .toggleStyle(.switch).controlSize(.small)
-                .onChange(of: menuBarLunar) {
-                    // 开关是快捷路径：动了开关就清掉自定义模板（最后一次操作生效）
-                    UserDefaults.standard.removeObject(forKey: "menuBarTemplate")
-                    NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
-                }
-
-            // 菜单栏形态：决定显示「图标 + 文字 / 只有图标 / 只有文字」。
-            // 刘海屏 Mac 上菜单栏放不下时，系统会把项藏到刘海后面（看不见也没提示），
-            // 切成「仅图标」宽度从约 120pt 降到约 22pt，基本都能挤回来。
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("菜单栏形态").font(.callout)
-                    Spacer()
-                    Picker("菜单栏形态", selection: $statusItemStyle) {
-                        Text("仅文字").tag(0)
-                        Text("图标 + 文字").tag(1)
-                        Text("仅图标").tag(2)
-                    }
-                    .labelsHidden().frame(width: 132)
-                    .onChange(of: statusItemStyle) {
-                        NotificationCenter.default.post(name: .menuBarStyleNeedsUpdate, object: nil)
-                    }
-                }
-                if statusItemStyle != 2 {
-                    Text("右上角看不到它时，切「仅图标」更容易露出来")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-
-            // 菜单栏格式（二期 token 拼装）：预设 3 档 + 自定义
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("菜单栏格式").font(.callout)
-                    Spacer()
-                    Picker("菜单栏格式", selection: formatChoice) {
-                        Text("简洁").tag(0)
-                        Text("带农历").tag(1)
-                        Text("农历优先").tag(2)
-                        Text("自定义").tag(3)
-                    }
-                    .labelsHidden().pickerStyle(.segmented).frame(width: 240)
-                }
-                if formatChoice.wrappedValue == 3 {
-                    TextField("如 {M}月{D}日 周{W} · {LM}{LD}", text: $customTemplate)
-                        .textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
-                        .onChange(of: customTemplate) {
-                            menuBarTemplate = customTemplate
-                            NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
-                        }
-                    Text("预览：" + MenuBarFormat.render(template: customTemplate, date: Date()))
-                        .font(.caption)
-                    Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支 {SH}时辰 {SG}时干支")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                    if MenuBarFormat.estimatedWidth(
-                        MenuBarFormat.render(template: customTemplate, date: Date()))
-                        > MenuBarFormat.widthWarningThreshold {
-                        Text("偏长：刘海屏 Mac 的菜单栏可能显示不全")
-                            .font(.caption2).foregroundStyle(.orange)
-                    }
-                }
-            }
-
-            HStack {
-                Text("弹窗密度").font(.callout)
-                Spacer()
-                Picker("弹窗密度", selection: $popoverDensity) {
-                    ForEach(PopoverDensity.allCases) { d in
-                        Text(d.label).tag(d.rawValue)
-                    }
-                }
-                .labelsHidden().pickerStyle(.segmented).frame(width: 180)
-            }
-
-            HStack {
-                Text("皮肤").font(.callout)
-                Spacer()
-                Picker("皮肤", selection: $skinRaw) {
-                    ForEach(Skin.allCases) { s in Text(s.label).tag(s.rawValue) }
-                }
-                .labelsHidden().pickerStyle(.segmented).frame(width: 180)
-            }
-
-            Toggle("显示干支时辰（真太阳时）", isOn: $ganzhiEnabled)
-                .toggleStyle(.switch).controlSize(.small)
-                .onChange(of: ganzhiEnabled) {
-                    if ganzhiEnabled { LocationProvider.shared.locate() }
-                }
-
-            // 快捷键 + 悬停（二期 V2-4）
-            HStack {
-                Text("呼出快捷键").font(.callout)
-                Spacer()
-                Button(recordingHotKey ? "按下新快捷键…" : HotKeyManager.saved.display) {
-                    recordingHotKey.toggle()
-                }
-                .font(.system(size: 11, design: .monospaced))
-            }
-            HStack {
-                Toggle("悬停弹出", isOn: $hoverEnabled)
-                    .toggleStyle(.switch).controlSize(.small)
-                if hoverEnabled {
-                    Slider(value: $hoverDelay, in: 0.2...1.5, step: 0.1)
-                        .frame(width: 110)
-                    Text(String(format: "%.1fs", hoverDelay))
-                        .font(.caption).foregroundStyle(.secondary).frame(width: 34)
-                }
-            }
-
-            // 通知（二期 V2-2）
-            Divider()
-            HStack(spacing: 6) {
-                Text("通知").font(.subheadline).fontWeight(.medium)
-                Spacer()
-                Text(authText)
-                    .font(.caption)
-                    .foregroundStyle(authColor)
-                if notifyAuth == .denied {
-                    Button("去系统设置") { openNotificationSettings() }
-                        .buttonStyle(.link).font(.caption)
-                }
-            }
-            Toggle("放假前一日提醒（18:00）", isOn: $notifyHolidayEve)
-                .toggleStyle(.switch).controlSize(.small).onChange(of: notifyHolidayEve) { reschedule() }
-            Toggle("节日当天提醒（09:00）", isOn: $notifyFestival)
-                .toggleStyle(.switch).controlSize(.small).onChange(of: notifyFestival) { reschedule() }
-            Toggle("生日/纪念日提醒（09:00）", isOn: $notifyBirthday)
-                .toggleStyle(.switch).controlSize(.small).onChange(of: notifyBirthday) { reschedule() }
-            HStack {
-                Toggle("免打扰时段", isOn: $dndEnabled)
-                    .toggleStyle(.switch).controlSize(.small).onChange(of: dndEnabled) { reschedule() }
-                if dndEnabled {
-                    DatePicker("", selection: dndStart, displayedComponents: .hourAndMinute)
-                        .labelsHidden().frame(width: 64)
-                    Text("至").font(.caption).foregroundStyle(.secondary)
-                    DatePicker("", selection: dndEnd, displayedComponents: .hourAndMinute)
-                        .labelsHidden().frame(width: 64)
-                }
-            }
-
-            Text(nextReminderText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
 
             Divider()
 
-            HStack {
-                Text("生日 / 纪念日").font(.subheadline).fontWeight(.medium)
-                Spacer()
-                Button("批量添加") { showImport = true }
-                    .buttonStyle(.link).font(.caption)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    TextField("名字", text: $newName)
-                        .textFieldStyle(.roundedBorder).frame(width: 120)
-                    Picker("历法", selection: $newKind) {
-                        Text("农历").tag(BirthdayStore.Entry.CalendarKind.lunar)
-                        Text("公历").tag(BirthdayStore.Entry.CalendarKind.solar)
-                    }.labelsHidden().frame(width: 64)
-                    Picker("重复", selection: $newCycle) {
-                        Text("每年").tag(BirthdayStore.Entry.Cycle.yearly)
-                        Text("每月").tag(BirthdayStore.Entry.Cycle.monthly)
-                    }.labelsHidden().frame(width: 64)
-                }
-                HStack(spacing: 6) {
-                    Picker("月", selection: $newMonth) {
-                        ForEach(1...12, id: \.self) {
-                            Text(newKind == .lunar ? LunarDate.monthName($0) + "月" : "\($0)月").tag($0)
-                        }
-                    }.labelsHidden().frame(width: 76)
-                    Picker("日", selection: $newDay) {
-                        ForEach(1...(newKind == .lunar ? 30 : 31), id: \.self) {
-                            Text(newKind == .lunar ? LunarDate.dayName($0) : "\($0)日").tag($0)
-                        }
-                    }.labelsHidden().frame(width: 76)
-                    Button("添加") {
-                        guard !newName.isEmpty else { return }
-                        store.add(.init(name: newName, lunarMonth: newMonth, lunarDay: newDay,
-                                        calendar: newKind, cycle: newCycle))
-                        newName = ""
-                        reschedule()   // 生日提醒纳入新条目
-                    }.disabled(newName.isEmpty)
-                }
-            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    section("显示") {
+                        toggleRow("显示宜忌（黄历）", $yijiEnabled)
+                        toggleRow("显示放假倒计时", $countdownEnabled)
+                        toggleRow("显示干支时辰（真太阳时）", $ganzhiEnabled)
+                            .onChange(of: ganzhiEnabled) { if ganzhiEnabled { LocationProvider.shared.locate() } }
+                    }
 
-            if !store.entries.isEmpty {
-                ForEach(sortedEntries, id: \.entry.id) { item in
-                    HStack {
-                        Text(item.entry.name)
+                    section("菜单栏") {
+                        row("菜单栏形态") {
+                            Picker("菜单栏形态", selection: $statusItemStyle) {
+                                Text("图标+文字").tag(1)
+                                Text("仅图标").tag(2)
+                                Text("仅文字").tag(0)
+                            }
+                            .labelsHidden().pickerStyle(.segmented)
+                            .onChange(of: statusItemStyle) {
+                                NotificationCenter.default.post(name: .menuBarStyleNeedsUpdate, object: nil)
+                            }
+                        }
+                        if statusItemStyle != 2 {
+                            hint("右上角看不到它时，切「仅图标」更容易露出来")
+                        }
+
+                        row("菜单栏格式") {
+                            Picker("菜单栏格式", selection: formatChoice) {
+                                Text("简洁").tag(0)
+                                Text("带农历").tag(1)
+                                Text("农历优先").tag(2)
+                                Text("自定义").tag(3)
+                            }
+                            .labelsHidden().pickerStyle(.segmented)
+                        }
+                        if formatChoice.wrappedValue == 3 {
+                            templateEditor
+                        }
+
+                    }
+
+                    section("交互") {
+                        toggleRow("登录后自动启动", $launchAtLogin)
+                            .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
+
+                        toggleRow("悬停弹出", $hoverEnabled)
+                        if hoverEnabled {
+                            HStack(spacing: 8) {
+                                Slider(value: $hoverDelay, in: 0.2...1.5, step: 0.1)
+                                Text(String(format: "%.1fs", hoverDelay))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .frame(width: 34, alignment: .trailing)
+                            }
+                            .padding(.leading, 2)
+                            .padding(.vertical, 2)
+                        }
+
+                        row("呼出快捷键") {
+                            Button(recordingHotKey ? "按下新快捷键…" : HotKeyManager.saved.display) {
+                                recordingHotKey.toggle()
+                            }
+                            .font(.system(size: 11, design: .monospaced))
+                            .controlSize(.small)
+                        }
+
+                        row("弹窗密度") {
+                            Picker("弹窗密度", selection: $popoverDensity) {
+                                ForEach(PopoverDensity.allCases) { d in Text(d.label).tag(d.rawValue) }
+                            }
+                            .labelsHidden().pickerStyle(.segmented)
+                        }
+
+                        row("皮肤") {
+                            Picker("皮肤", selection: $skinRaw) {
+                                ForEach(Skin.allCases) { s in Text(s.label).tag(s.rawValue) }
+                            }
+                            .labelsHidden().pickerStyle(.segmented)
+                        }
+                    }
+
+                    section("通知") {
+                        HStack(spacing: 6) {
+                            Text("系统权限").font(labelFont).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(authText).font(.caption).foregroundStyle(authColor)
+                            if notifyAuth == .denied {
+                                Button("去系统设置") { openNotificationSettings() }
+                                    .buttonStyle(.link).font(.caption)
+                            }
+                        }
+                        .frame(minHeight: 20)
+
+                        toggleRow("放假前一日提醒（18:00）", $notifyHolidayEve).onChange(of: notifyHolidayEve) { reschedule() }
+                        toggleRow("节日当天提醒（09:00）", $notifyFestival).onChange(of: notifyFestival) { reschedule() }
+                        toggleRow("生日/纪念日提醒（09:00）", $notifyBirthday).onChange(of: notifyBirthday) { reschedule() }
+                        toggleRow("免打扰时段", $dndEnabled).onChange(of: dndEnabled) { reschedule() }
+                        if dndEnabled {
+                            HStack(spacing: 6) {
+                                DatePicker("", selection: dndStart, displayedComponents: .hourAndMinute)
+                                    .labelsHidden().frame(width: 70)
+                                Text("至").font(.caption).foregroundStyle(.secondary)
+                                DatePicker("", selection: dndEnd, displayedComponents: .hourAndMinute)
+                                    .labelsHidden().frame(width: 70)
+                            }
+                            .padding(.leading, 2)
+                            .padding(.vertical, 2)
+                        }
+
+                        hint(nextReminderText)
+                    }
+
+                    section("生日 / 纪念日") {
+                        HStack {
+                            Text("已添加 \(store.entries.count) 条").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("批量添加") { showImport = true }
+                                .buttonStyle(.link).font(.caption)
+                        }
+                        .frame(minHeight: 20)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                TextField("名字", text: $newName)
+                                    .textFieldStyle(.roundedBorder).frame(width: 120)
+                                Picker("历法", selection: $newKind) {
+                                    Text("农历").tag(BirthdayStore.Entry.CalendarKind.lunar)
+                                    Text("公历").tag(BirthdayStore.Entry.CalendarKind.solar)
+                                }.labelsHidden().frame(width: 64)
+                                Picker("重复", selection: $newCycle) {
+                                    Text("每年").tag(BirthdayStore.Entry.Cycle.yearly)
+                                    Text("每月").tag(BirthdayStore.Entry.Cycle.monthly)
+                                }.labelsHidden().frame(width: 64)
+                            }
+                            HStack(spacing: 6) {
+                                Picker("月", selection: $newMonth) {
+                                    ForEach(1...12, id: \.self) {
+                                        Text(newKind == .lunar ? LunarDate.monthName($0) + "月" : "\($0)月").tag($0)
+                                    }
+                                }.labelsHidden().frame(width: 76)
+                                Picker("日", selection: $newDay) {
+                                    ForEach(1...(newKind == .lunar ? 30 : 31), id: \.self) {
+                                        Text(newKind == .lunar ? LunarDate.dayName($0) : "\($0)日").tag($0)
+                                    }
+                                }.labelsHidden().frame(width: 76)
+                                Button("添加") {
+                                    guard !newName.isEmpty else { return }
+                                    store.add(.init(name: newName, lunarMonth: newMonth, lunarDay: newDay,
+                                                    calendar: newKind, cycle: newCycle))
+                                    newName = ""
+                                    reschedule()   // 生日提醒纳入新条目
+                                }.disabled(newName.isEmpty)
+                            }
+                        }
+                        .padding(.vertical, 4)
+
+                        if !store.entries.isEmpty {
+                            ForEach(sortedEntries, id: \.entry.id) { item in
+                                HStack {
+                                    Text(item.entry.name).font(labelFont)
+                                    Spacer()
+                                    Text(describe(item.entry))
+                                        .foregroundStyle(.secondary).font(.caption)
+                                    Text(countdownText(item.days))
+                                        .font(.caption)
+                                        .frame(width: 52, alignment: .trailing)
+                                        .foregroundStyle(item.days <= 7
+                                            ? Color.adaptive(light: 0xD43030, dark: 0xFF6961)
+                                            : Color.secondary)
+                                    Button("删") { store.remove(item.entry); reschedule() }
+                                        .buttonStyle(.plain).foregroundStyle(.red).font(.caption)
+                                }
+                                .frame(minHeight: 22)
+                                .padding(.trailing, 2)
+                            }
+                        }
+                    }
+
+                    Divider().padding(.top, 14)
+
+                    // 退出入口：菜单栏配件 App 没有 Dock 图标、也没有应用菜单，
+                    // 不在这里给一个按钮，用户就只能去「活动监视器」杀进程，
+                    // 也就没法把 App 拖进废纸篓（系统拒删运行中的 App）。
+                    HStack(spacing: 8) {
+                        Text("SolunaCal \(Self.versionText)")
+                            .font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Text(describe(item.entry))
-                            .foregroundStyle(.secondary).font(.caption)
-                        Text(countdownText(item.days))
-                            .font(.caption)
-                            .foregroundStyle(item.days <= 7
-                                ? Color.adaptive(light: 0xD43030, dark: 0xFF6961)
-                                : Color.secondary)
-                        Button("删") { store.remove(item.entry); reschedule() }
-                            .buttonStyle(.plain).foregroundStyle(.red).font(.caption)
+                        Button("退出 SolunaCal") { NSApp.terminate(nil) }
+                            .controlSize(.small)
                     }
+                    .padding(.top, 8)
                 }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-
-            Divider().padding(.top, 6)
-
-            // 退出入口：菜单栏配件 App 没有 Dock 图标、也没有应用菜单，
-            // 不在这里给一个按钮，用户就只能去「活动监视器」杀进程，
-            // 也就没法把 App 拖进废纸篓（系统拒删运行中的 App）。
-            HStack(spacing: 8) {
-                Text("SolunaCal \(Self.versionText)")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("退出 SolunaCal") { NSApp.terminate(nil) }
-                    .controlSize(.small)
-            }
-            .padding(.top, 2)
+            .scrollIndicators(.visible)
         }
-            .padding(12)
-            .frame(width: 360)
-        }
-        .frame(width: 360)
+        .frame(width: 440)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showImport) {
             BirthdayImportView { rows in
@@ -328,6 +301,64 @@ public struct SettingsView: View {
                 keyMonitor = nil
             }
         }
+    }
+
+    // MARK: 版式零件
+
+    /// 一行设置：标签左对齐，控件固定落在同一条右基准线上
+    @ViewBuilder
+    private func row<C: View>(_ label: String, @ViewBuilder control: () -> C) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(labelFont).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            control().frame(width: controlColumn, alignment: .trailing)
+        }
+        .frame(minHeight: 26)
+        .padding(.vertical, 2)
+    }
+
+    private func toggleRow(_ label: String, _ binding: Binding<Bool>) -> some View {
+        row(label) {
+            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).controlSize(.small)
+        }
+    }
+
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func section<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
+        Text(title).font(sectionFont).foregroundStyle(.secondary)
+            .padding(.top, 14).padding(.bottom, 2)
+        content()
+    }
+
+    /// 自定义模板编辑区：单独占满一行，不进控件列
+    private var templateEditor: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("如 {M}月{D}日 周{W} · {LM}{LD}", text: $customTemplate)
+                .textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
+                .onChange(of: customTemplate) {
+                    menuBarTemplate = customTemplate
+                    NotificationCenter.default.post(name: .menuBarTitleNeedsUpdate, object: nil)
+                }
+            Text("预览：" + MenuBarFormat.render(template: customTemplate, date: Date()))
+                .font(.caption)
+            Text("可用：{Y}年 {M}月 {D}日 {W}周 {LM}农历月 {LD}农历日 {GY}年干支 {SX}生肖 {GD}日干支 {SH}时辰 {SG}时干支")
+                .font(.caption2).foregroundStyle(.tertiary)
+            if MenuBarFormat.estimatedWidth(
+                MenuBarFormat.render(template: customTemplate, date: Date()))
+                > MenuBarFormat.widthWarningThreshold {
+                Text("偏长：刘海屏 Mac 的菜单栏可能显示不全")
+                    .font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .padding(.bottom, 6)
     }
 
     private func describe(_ e: BirthdayStore.Entry) -> String {
