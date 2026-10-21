@@ -2,6 +2,45 @@ import AppKit
 import Foundation
 import LunarCore
 
+/// 安装位置管理：从安装包（磁盘映像）里直接运行是「临时状态」——
+/// 卷一弹出 App 就没了，自动更新也用不了（目标只读）。首次运行就该把用户
+/// 引到「应用程序」，而不是等他在更新时撞墙（0.4.3 真实事故）。
+enum AppInstaller {
+    /// 是否正从挂载卷（DMG）里直接运行
+    static var isRunningFromVolume: Bool {
+        Bundle.main.bundleURL.path.hasPrefix("/Volumes/")
+    }
+
+    static var installedURL: URL { URL(fileURLWithPath: "/Applications/SolunaCal.app") }
+
+    /// 把当前运行的 App 装进「应用程序」。先拷到同卷临时名再整体替换，
+    /// 任何一步失败都不会破坏已经装好的那份。
+    static func installToApplications() throws -> URL {
+        let fm = FileManager.default
+        let dst = installedURL
+        let tmp = URL(fileURLWithPath: "/Applications/.SolunaCal.app.new-\(getpid())")
+        try? fm.removeItem(at: tmp)
+        try fm.copyItem(at: Bundle.main.bundleURL, to: tmp)
+        clearQuarantine(tmp)
+        if fm.fileExists(atPath: dst.path) {
+            _ = try fm.replaceItemAt(dst, withItemAt: tmp)
+        } else {
+            try fm.moveItem(at: tmp, to: dst)
+        }
+        clearQuarantine(dst)
+        return dst
+    }
+
+    /// 清掉「从网上下载」的隔离标记，否则 Gatekeeper 会拦首次打开
+    private static func clearQuarantine(_ url: URL) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        p.arguments = ["-cr", url.path]
+        try? p.run()
+        p.waitUntilExit()
+    }
+}
+
 /// 插包即更新：用户双击新 DMG 后，由**已安装、已被用户放行过的 App** 自己完成替换。
 ///
 /// 为什么不让 DMG 里带安装器：没有 Apple 公证时，任何随包分发的可执行体

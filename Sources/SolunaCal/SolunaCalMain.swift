@@ -11,6 +11,17 @@ enum SolunaCalMain {
         if CommandLine.arguments.contains("--selfcheck") {
             exit(SelfCheck.run())
         }
+        // 安装自检：把当前 App 装进「应用程序」（从挂载卷里跑时用，可无头验证）
+        if CommandLine.arguments.contains("--install-self") {
+            do {
+                let url = try AppInstaller.installToApplications()
+                print("installed:", url.path)
+                exit(0)
+            } catch {
+                print("install-failed:", error.localizedDescription)
+                exit(1)
+            }
+        }
         // 日程诊断：某天系统日历到底有几条、各属哪个日历
         if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--dump-events=") }) {
             let raw = String(flag.dropFirst("--dump-events=".count))
@@ -284,6 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 静默失败的代价是「点完更新图标没了，还以为 App 坏了」——0.4.3 真实事故。
         reportUpdateFailureIfAny()
 
+        // 从安装包直接运行 = 临时状态：卷一弹出 App 就没了，自动更新也做不了。
+        // 第一次运行就把用户引到「应用程序」，别等他在更新时撞墙。
+        promptInstallIfRunningFromVolume()
+
         if Onboarding.needsOnboarding {
             LaunchLog.write("弹出首次引导窗口")
             showOnboarding()
@@ -301,6 +316,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func logRunLocation() {
         guard Bundle.main.bundleURL.path.hasPrefix("/Volumes/") else { return }
         LaunchLog.write("注意：正从安装卷直接运行（\(Bundle.main.bundleURL.path)），自动更新不可用")
+    }
+
+    /// 从安装包直接运行时，主动引导装进「应用程序」。
+    /// 不这么做的话：卷一弹出 App 就没了、自动更新也会失败（0.4.3 事故）。
+    /// 「稍后」按 7 天静音，避免每次启动都弹。
+    private func promptInstallIfRunningFromVolume() {
+        guard AppInstaller.isRunningFromVolume else { return }
+        let snoozeKey = "installPrompt.snoozedUntil"
+        if let until = UserDefaults.standard.object(forKey: snoozeKey) as? Date, Date() < until {
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        LaunchLog.write("检测到从安装卷运行，弹出「装到应用程序」引导")
+        let alert = NSAlert()
+        alert.messageText = "把 SolunaCal 装到「应用程序」？"
+        alert.informativeText = """
+        你现在是从安装包直接运行的。这有两个问题：
+        · 安装包一弹出，SolunaCal 就没了；
+        · 自动更新用不了（安装包是只读的，盖不上去）。
+
+        点「立即安装」会自动装好并重新打开，生日和设置都会保留。
+        """
+        alert.addButton(withTitle: "立即安装")
+        alert.addButton(withTitle: "稍后")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            UserDefaults.standard.set(Date().addingTimeInterval(7 * 24 * 3600), forKey: snoozeKey)
+            LaunchLog.write("用户选择稍后安装，7 天后再问")
+            return
+        }
+        do {
+            let url = try AppInstaller.installToApplications()
+            LaunchLog.write("已安装到 \(url.path)，切换到新位置运行")
+            // 必须「先退后开」：新旧两份 bundle id 相同，直接 open 只会把正在运行的
+            // 旧实例（在 /Volumes 上）激活到前台，然后它自己退出 —— 用户看到的是
+            // 「点完安装什么都没发生」。与自动更新脚本同一套路：交给 detached shell
+            // 睡一会儿再 open，本进程立即退出。
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+            relaunch.arguments = ["-c", "sleep 0.8; /usr/bin/open \"\(url.path)\""]
+            try? relaunch.run()
+            NSApp.terminate(nil)
+        } catch {
+            LaunchLog.write("安装到「应用程序」失败：\(error.localizedDescription)")
+            let fail = NSAlert()
+            fail.messageText = "没能自动安装"
+            fail.informativeText = """
+            \(error.localizedDescription)
+
+            可以手动装：在打开的安装包窗口里，把 SolunaCal 拖到「应用程序」文件夹。
+            """
+            fail.addButton(withTitle: "好")
+            fail.runModal()
+        }
     }
 
     /// 上次更新失败：弹给用户看，然后清记录（只报一次）。
