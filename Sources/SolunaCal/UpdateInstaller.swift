@@ -21,6 +21,22 @@ enum UpdateInstaller {
 
     private static var installURL: URL { Bundle.main.bundleURL }
 
+    /// 当前运行位置能否被更新替换：装在「应用程序」里才可以。
+    /// 从 DMG 卷里直接跑时 installURL 指向只读卷（EROFS），替换必败——
+    /// 而且流程会先把旧 App 退掉，脚本再失败就没人把它拉回来，
+    /// 用户侧看到的就是「点完更新，菜单栏图标没了」。所以先问可写性。
+    static var isUpdatableInPlace: Bool {
+        let path = installURL.path
+        if path.hasPrefix("/Volumes/") { return false }
+        return FileManager.default.isWritableFile(atPath: path)
+    }
+
+    /// 打开安装卷，让用户自己把 App 拖进「应用程序」
+    static func revealInstallSource(_ candidate: Candidate) {
+        // 注意：当前 SDK 里 deletingLastPathComponent 是方法不是属性，必须带 ()
+        NSWorkspace.shared.open(candidate.appURL.deletingLastPathComponent())
+    }
+
     /// 扫描 /Volumes 下的挂载卷，找出版本更高的 SolunaCal.app。
     /// 不用 FileManager.mountedVolumeURLs：实测在非全屏会话里它只返回 "/"，
     /// 挂载的磁盘映像根本列不出来；直接读 /Volumes 目录稳定得多。
@@ -52,6 +68,30 @@ enum UpdateInstaller {
 
     /// 弹窗询问；用户确认后返回 true
     static func askAndInstall(_ candidate: Candidate) -> Bool {
+        // 从安装包卷里直接运行：替换目标只读，必败。此时只引导安装，
+        // 绝不让 App 退出——退出后脚本失败就没人把它拉回来了
+        // （实测症状：点完「立即更新」，菜单栏图标消失）。
+        guard isUpdatableInPlace else {
+            LaunchLog.write("更新中止：当前 App 位于只读位置（\(installURL.path)），先引导安装")
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "不能自动更新：App 所在位置不可写入"
+            alert.informativeText = """
+            当前 App 所在的位置盖不上新文件——从安装包（磁盘映像）里直接运行时
+            就是这样，安装包是只读的。当前版本 \(currentVersion) 会继续正常用。
+
+            装一次以后就能自动更新了：
+            在打开的安装包窗口里，把 SolunaCal 拖到「应用程序」文件夹，
+            以后从「应用程序」打开它。
+            """
+            alert.addButton(withTitle: "打开安装包")
+            alert.addButton(withTitle: "以后再说")
+            if alert.runModal() == .alertFirstButtonReturn {
+                revealInstallSource(candidate)
+            }
+            return false
+        }
+
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "发现新版本 \(candidate.version)"
@@ -83,6 +123,11 @@ enum UpdateInstaller {
     /// 写一个延迟执行的替换脚本，然后由调用方退出 App。
     /// 之所以要先退出再替换：运行中的 .app 被覆盖后进程仍在用内存里的旧代码，
     /// 表现就是「装了新版却还是旧界面」（已实测）。
+    ///
+    /// 铁律：**任何失败路径都必须把 App 重新打开**。旧进程已经退了，
+    /// 脚本再不拉回来，用户侧就是「点完更新什么都没有了」——这是 0.4.3
+    /// 真实事故的成因（只读卷上替换失败，静默 exit 1，无人重开）。
+    /// 失败原因写进 update-error.log，下次启动时弹给用户看。
     private static func startReplace(from source: URL, to destination: URL) throws {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -94,26 +139,40 @@ enum UpdateInstaller {
         #!/bin/sh
         # 由 SolunaCal 生成：等旧进程退出 → 整包替换 → 清隔离标记 → 重新打开
         # 顺序刻意做成「先拷到 .new，成功后再换」，任何一步失败都不会把用户装好的 App 弄没
+        # fail()：留错误记录 + 把 App 拉回来。缺任何一条，用户都会「点完更新图标没了」
+        ERR="$3"
+        LOG="$ERR/update-error.log"
+
+        fail() {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG"
+            [ -d "$DST" ] && /usr/bin/open "$DST"
+            exit 1
+        }
+
         sleep 2
         SRC="$1"
         DST="$2"
         NEW="$DST.new.$$"
         OLD="$DST.old.$$"
 
-        if [ ! -d "$SRC" ]; then exit 1; fi
+        if [ ! -d "$SRC" ]; then fail "安装源不存在：$SRC"; fi
 
-        /usr/bin/ditto "$SRC" "$NEW" || { /bin/rm -rf "$NEW"; exit 1; }
+        /usr/bin/ditto "$SRC" "$NEW" || { /bin/rm -rf "$NEW"; fail "拷贝失败（安装包所在的卷可能只读，或空间不足）：$DST"; }
         /usr/bin/xattr -cr "$NEW"
 
         if [ -d "$DST" ]; then
-            /bin/mv "$DST" "$OLD" || { /bin/rm -rf "$NEW"; exit 1; }
+            /bin/mv "$DST" "$OLD" || { /bin/rm -rf "$NEW"; fail "旧版本移走失败：$DST"; }
         fi
         if ! /bin/mv "$NEW" "$DST"; then
             [ -d "$OLD" ] && /bin/mv "$OLD" "$DST"
-            exit 1
+            fail "替换失败，已回滚到原版本：$DST"
         fi
         /bin/rm -rf "$OLD"
-        /usr/bin/open "$DST"
+        # 安装已成功：open 失败只是没自动拉起（用户手动双击即可），
+        # 不能算「更新失败」——新版已经装好了。只留一条记录。
+        if ! /usr/bin/open "$DST"; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] 新版本已装好，但没能自动打开，请手动双击打开：$DST" >> "$LOG"
+        fi
         exit 0
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
@@ -121,7 +180,7 @@ enum UpdateInstaller {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [scriptURL.path, source.path, destination.path]
+        process.arguments = [scriptURL.path, source.path, destination.path, support.path]
         try process.run()
 
         // 等旧进程真的起来再退出，避免父进程先死导致 exec 失败

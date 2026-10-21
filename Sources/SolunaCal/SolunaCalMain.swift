@@ -103,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 第一行就写日志：哪怕后面某步崩了，也能看出「启动到了这里」
         LaunchLog.write("启动 v\(LaunchLog.versionText) \(LaunchLog.systemText) path=\(Bundle.main.bundlePath)")
+        logRunLocation()
 
         HolidayStore.refreshInBackground()
         // 同步登录自启注册状态与偏好（升级/重装后保持一致）
@@ -222,6 +223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.showFallbackIfStatusItemHidden()
         }
 
+        // 上次自动更新失败的话，必须让用户知道（脚本会在 Application Support 留记录）。
+        // 静默失败的代价是「点完更新图标没了，还以为 App 坏了」——0.4.3 真实事故。
+        reportUpdateFailureIfAny()
+
         if Onboarding.needsOnboarding {
             LaunchLog.write("弹出首次引导窗口")
             showOnboarding()
@@ -232,6 +237,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         LaunchLog.write("退出")
+    }
+
+    /// 从安装卷直接运行时留个痕：自动更新此时不可用（替换目标只读），
+    /// 出问题时能一眼看出用户是怎么跑的。
+    private func logRunLocation() {
+        guard Bundle.main.bundleURL.path.hasPrefix("/Volumes/") else { return }
+        LaunchLog.write("注意：正从安装卷直接运行（\(Bundle.main.bundleURL.path)），自动更新不可用")
+    }
+
+    /// 上次更新失败：弹给用户看，然后清记录（只报一次）。
+    /// 文案面向用户——不说「只读卷」「ditto」，只说现象和恢复办法。
+    private func reportUpdateFailureIfAny() {
+        let log = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SolunaCal", isDirectory: true)
+            .appendingPathComponent("update-error.log")
+        guard let text = try? String(contentsOf: log, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        try? FileManager.default.removeItem(at: log)
+        LaunchLog.write("上次更新失败记录：\(text.replacingOccurrences(of: "\n", with: " | "))")
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "上次自动更新没有正常完成"
+        alert.informativeText = """
+        \(text)
+
+        当前版本还能正常用，数据都在。重新打开安装包、再试一次更新即可；
+        如果还失败，把 App 拖到「应用程序」文件夹后再试。
+        """
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     /// 菜单栏按钮点击：左键弹月历，右键出菜单（右键里必须有「退出」，
