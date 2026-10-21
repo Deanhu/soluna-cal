@@ -9,6 +9,7 @@ public struct DayDetailView: View {
     let date: Date
     let calendar: Calendar
     let showYiji: Bool
+    let skin: Skin
     let onAddEvent: () -> Void
     let onRequestAccess: () -> Void
     @State private var yijiSheetOpen = false
@@ -16,11 +17,13 @@ public struct DayDetailView: View {
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
                 showYiji: Bool,
+                skin: Skin = .default,
                 onAddEvent: @escaping () -> Void,
                 onRequestAccess: @escaping () -> Void = {}) {
         self.date = date
         self.calendar = calendar
         self.showYiji = showYiji
+        self.skin = skin
         self.onAddEvent = onAddEvent
         self.onRequestAccess = onRequestAccess
     }
@@ -88,8 +91,8 @@ public struct DayDetailView: View {
                 // 一行塞「宜…忌…」时，忌会被整段挤掉；拆成两行各自省略，
                 // 至少两边都能看到开头；完整内容点开看。
                 VStack(alignment: .leading, spacing: 2) {
-                    yijiLine("宜", yj.yi)
-                    yijiLine("忌", yj.ji)
+                    yijiLine("宜", yj.yi, isGood: true)
+                    yijiLine("忌", yj.ji, isGood: false)
                 }
                 .padding(.trailing, 10)
                 .contentShape(Rectangle())
@@ -146,14 +149,17 @@ public struct DayDetailView: View {
         }
     }
 
-    /// 宜 / 忌 各一行：标签定宽对齐，内容单行省略
-    private func yijiLine(_ label: String, _ items: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+    /// 宜 / 忌 各一行：标签做成小色标（宜绿 / 忌赭），内容保持次级灰——
+    /// 只给判断上色，正文不上色，避免整块变花。
+    private func yijiLine(_ label: String, _ items: String, isGood: Bool) -> some View {
+        let tint = isGood ? skin.yijiGood : skin.yijiBad
+        return HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(tint)
                 .fixedSize()                       // 不能被压缩，否则「宜/忌」会被切掉
-                .frame(width: 13, alignment: .center)
+                .frame(width: 14, height: 13)
+                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
             Text(items)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)

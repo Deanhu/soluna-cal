@@ -44,7 +44,7 @@ public struct CalendarPopoverView: View {
             weekdayRow
             monthGrid
             if let sel = selectedDay {
-                DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled,
+                DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled, skin: skin,
                               onAddEvent: { editingDay = sel },
                               onRequestAccess: {
                                   EventProvider.shared.requestAccessIfNeeded { refreshEvents() }

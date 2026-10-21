@@ -48,6 +48,22 @@ public enum Skin: String, CaseIterable, Identifiable {
     /// 生日文案（玫红）：与节日红、节气金都拉开，避免「看不出这是生日」
     var birthdayText: Color { .adaptive(light: 0xE0235C, dark: 0xFF7AAF) }
 
+    /// 宜（可做）：绿；忌（避开）：赭红。
+    /// 与节日红刻意拉开——节日红是「这一天是节日」的事实标记，
+    /// 忌的红是「不建议做」的判断，同色会混淆。
+    var yijiGood: Color {
+        switch self {
+        case .default: return .adaptive(light: 0x2F7D4A, dark: 0x6ECF93)
+        case .springFestival: return .adaptive(light: 0x2E5D4B, dark: 0x7FCBA5)
+        }
+    }
+    var yijiBad: Color {
+        switch self {
+        case .default: return .adaptive(light: 0xB5442E, dark: 0xE58E78)
+        case .springFestival: return .adaptive(light: 0x9E2B22, dark: 0xE88A7D)
+        }
+    }
+
     var todayFill: Color {         // 今日实心（春节皮肤换朱砂，蓝色让给系统）
         switch self {
         case .default: return Color.accentColor

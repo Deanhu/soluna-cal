@@ -75,8 +75,8 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: "SolunaCal"
         INFOPLIST_KEY_NSCalendarsUsageDescription: "读取日程用于月历展示；双击日期可创建事件写回系统日历"
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "真太阳时校正需要一次定位获取经度；拒绝则按东八区中央经线计算"
-        CURRENT_PROJECT_VERSION: "19"
-        MARKETING_VERSION: "0.3.12"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "0.3.13"
 
   SolunaWidget:
     type: app-extension
@@ -89,8 +89,8 @@ targets:
         PRODUCT_NAME: SolunaWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal.widget
         INFOPLIST_FILE: Sources/SolunaWidget/Info.plist
-        CURRENT_PROJECT_VERSION: "19"
-        MARKETING_VERSION: "0.3.12"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "0.3.13"
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
