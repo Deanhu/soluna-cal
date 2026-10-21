@@ -33,7 +33,9 @@ public struct SettingsView: View {
     @State private var newName = ""
     @State private var newMonth = 1
     @State private var newDay = 1
-    @State private var newKind: BirthdayStore.Entry.CalendarKind = .lunar
+    /// 默认公历：填生日/纪念日时大多数人手里就是公历日期，
+    /// 默认停在农历等于每加一条都要先切一次（Dean 2026-10-21 指出）。
+    @State private var newKind: BirthdayStore.Entry.CalendarKind = .solar
     @State private var newCycle: BirthdayStore.Entry.Cycle = .yearly
     @Environment(\.dismiss) private var dismiss
 

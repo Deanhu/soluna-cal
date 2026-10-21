@@ -184,6 +184,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     guard let view = w.contentView else { print("no-content-view"); exit(1) }
                     print("panel=\(name) contentView=\(view.bounds.size) window=\(w.frame.size)")
+                    // `--scroll=bottom`：设置页是滚动视图，生日/纪念日在下方，
+                    // 不滚下去截图只拍到上半截，等于没验到。
+                    if CommandLine.arguments.contains("--scroll=bottom"),
+                       let sv = Self.firstScrollView(in: view) {
+                        let maxY = max(0, (sv.documentView?.frame.height ?? 0) - sv.contentView.bounds.height)
+                        sv.contentView.scroll(to: NSPoint(x: 0, y: maxY))
+                        sv.reflectScrolledClipView(sv.contentView)
+                        print("scrolled to bottom maxY=\(Int(maxY))")
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+                    }
                     guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                         print("capture-failed"); exit(1)
                     }
@@ -951,6 +961,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             report("TIMEOUT 回调没回来 after=\(name(after)) raw=\(after.rawValue)")
             exit(3)
         }
+    }
+
+    /// 递归找第一个 NSScrollView：SwiftUI 的 ScrollView 底下就是它。
+    /// 只用于诊断截图（把滚动位置拉到要看的那一段）。
+    private static func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let sv = view as? NSScrollView { return sv }
+        for sub in view.subviews {
+            if let found = firstScrollView(in: sub) { return found }
+        }
+        return nil
     }
 
     /// 把弹窗的内容视图渲染成 PNG
