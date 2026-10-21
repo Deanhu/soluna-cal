@@ -90,4 +90,6 @@ public extension Notification.Name {
     /// 菜单栏形态变更（纯文字 / 图标+文字 / 纯图标）。
     /// 形态决定状态项宽度与有没有图标，必须重建，不能只改标题。
     static let menuBarStyleNeedsUpdate = Notification.Name("menuBarStyleNeedsUpdate")
+    /// 弹窗密度变了：弹窗尺寸是按密度固定的，需要重算一次
+    static let popoverDensityNeedsUpdate = Notification.Name("popoverDensityNeedsUpdate")
 }

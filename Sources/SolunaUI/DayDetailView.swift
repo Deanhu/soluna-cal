@@ -117,6 +117,9 @@ public struct DayDetailView: View {
                 }
             } else {
                 // 带上开始时间：同名事件从不同日历来时，时间与日历名是唯一的区分线索
+                // 限高 + 可滚动：弹窗高度是固定的，事件多了不能把布局顶破
+                ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
                 ForEach(events) { item in
                     HStack(spacing: 4) {
                         Text(item.isAllDay ? "全天" : Self.timeFormatter.string(from: item.start))
@@ -131,6 +134,9 @@ public struct DayDetailView: View {
                         }
                     }
                 }
+                }
+                }
+                .frame(maxHeight: 72, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

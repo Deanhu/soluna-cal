@@ -139,6 +139,9 @@ public struct SettingsView: View {
                                 ForEach(PopoverDensity.allCases) { d in Text(d.label).tag(d.rawValue) }
                             }
                             .labelsHidden().pickerStyle(.segmented)
+                            .onChange(of: popoverDensity) {
+                                NotificationCenter.default.post(name: .popoverDensityNeedsUpdate, object: nil)
+                            }
                         }
 
                         row("皮肤") {

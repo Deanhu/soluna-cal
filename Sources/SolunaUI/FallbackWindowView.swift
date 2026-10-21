@@ -42,7 +42,7 @@ public struct FallbackWindowView: View {
 
             // 定宽与真实窗口一致（340）：离屏渲染按内容理想宽度出图会偏宽，
             // 定宽后渲染结果和真机一致，也保证日历在窗口里居中
-            CalendarPopoverView(store: store)
+            CalendarPopoverView(store: store, fixedHeight: false)
                 .frame(maxWidth: .infinity)
         }
         .frame(width: 340)

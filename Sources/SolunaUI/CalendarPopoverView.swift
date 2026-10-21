@@ -11,7 +11,13 @@ public struct CalendarPopoverView: View {
     /// initialMonth：预览/测试用，可指定起始月份（如边界 1900-01 / 2099-12）
     /// initialSelected：预览/测试用，预选某日以渲染选中日区域（干支行、日程列表）
     /// initialEditing：预览/测试用，让某日直接进入就地编辑条状态
-    public init(store: BirthdayStore, initialMonth: Date? = nil, initialSelected: Date? = nil, initialEditing: Date? = nil) {
+    /// 弹窗要固定高度（避免尺寸随内容跳动）；嵌进窗口时不需要，交给窗口自适应
+    private let fixedHeight: Bool
+
+    public init(store: BirthdayStore, initialMonth: Date? = nil,
+                initialSelected: Date? = nil, initialEditing: Date? = nil,
+                fixedHeight: Bool = true) {
+        self.fixedHeight = fixedHeight
         self.store = store
         _displayed = State(initialValue: initialMonth ?? Date())
         _selectedDay = State(initialValue: initialSelected)
@@ -55,10 +61,13 @@ public struct CalendarPopoverView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8).padding(.top, 8)
             }
+            // 尺寸固定后，多出来的空间在这里吸收；内容超出则由卡片内部滚动
+            Spacer(minLength: 0)
             Divider().padding(.top, 4)
             footer
         }
-        .frame(width: t.popoverWidth)
+        .frame(width: t.popoverWidth,
+               height: fixedHeight ? t.popoverHeight : nil)
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }

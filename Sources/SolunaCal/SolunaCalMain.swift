@@ -61,8 +61,6 @@ enum SolunaCalMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private var popoverHC: NSHostingController<CalendarPopoverView>?
-    private var popoverSizeTimer: Timer?
     private var fallbackWindow: NSWindow?
     private var timer: Timer?
     private var hoverTimer: Timer?
@@ -171,12 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         // 初始尺寸按当前密度算，否则打开瞬间是 300 宽、0.15 秒后才跳到正确宽度，
         // 看起来像「先窄一下再弹开」。内容宽 = popoverWidth + 左右各 6pt。
-        let densityRaw = UserDefaults.standard.string(forKey: "popoverDensity")
-            ?? PopoverDensity.standard.rawValue
-        let initialWidth = (PopoverDensity(rawValue: densityRaw) ?? .standard).tokens.popoverWidth + 12
-        popover.contentSize = NSSize(width: initialWidth, height: 400)
+        // 尺寸固定：宽度 = popoverWidth + 左右各 6pt；高度直接用 token。
+        // 不再随内容变化，也就不需要任何"跟随内容"的同步逻辑。
+        applyPopoverSize()   // 尺寸只在一处算：按当前密度固定宽高
         let popoverHC = NSHostingController(rootView: CalendarPopoverView(store: store))
-        self.popoverHC = popoverHC
         // 让 popover 跟随内容尺寸（弹窗密度切换时自动伸缩）
         popoverHC.sizingOptions = [.preferredContentSize]
         popover.contentViewController = popoverHC
@@ -191,6 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateTitle()
         }
         // 设置里切换菜单栏形态：宽度和图标都变了，必须重建
+        NotificationCenter.default.addObserver(
+            forName: .popoverDensityNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
+            self?.applyPopoverSize()
+        }
         NotificationCenter.default.addObserver(
             forName: .menuBarStyleNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
             self?.applyStatusAppearance()
@@ -284,19 +284,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 判断菜单栏图标是否被系统藏起来了。
     /// 有刘海的屏幕会给出刘海两侧的安全区；图标落在两个区之外就是被藏了。
     private func statusItemIsHidden() -> Bool {
-        guard let button = statusItem.button,
-              let win = button.window,
-              let screen = win.screen ?? NSScreen.main else { return false }
+        guard let button = statusItem.button, let win = button.window else { return false }
         let frame = win.frame
-        // 刚启动时窗口可能还没布局好（宽高为 0），此时不能判定为「被藏了」，
-        // 否则每次启动都会误弹兜底窗口
+
+        // 还没布局好（宽高为 0）时结果不可信：一律当可见，避免每次启动误弹
         guard frame.width > 1, frame.height > 1 else { return false }
-        let zones = [screen.auxiliaryTopLeftArea, screen.auxiliaryTopRightArea].compactMap { $0 }
-        if zones.isEmpty {
-            // 没有刘海：只要窗口还在屏幕内就算可见
-            return !screen.frame.intersects(frame)
+
+        // 双屏时状态项在每块屏的菜单栏各有一份：任一屏可见即算可见。
+        // 只查 win.screen 会在「内建刘海屏被藏、外接屏正常」时误报。
+        for screen in NSScreen.screens {
+            let zones = [screen.auxiliaryTopLeftArea, screen.auxiliaryTopRightArea]
+                .compactMap { $0 }
+            if zones.isEmpty {
+                if screen.frame.intersects(frame) { return false }
+            } else if zones.contains(where: { $0.intersects(frame) }) {
+                return false
+            }
         }
-        return !zones.contains { $0.intersects(frame) }
+        return true
     }
 
     private func showFallbackIfStatusItemHidden(retry: Bool = true) {
@@ -314,6 +319,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 兜底窗口：说明为什么看不到图标 + 一个能用的日历
+    /// 按当前密度重设弹窗尺寸（改密度、启动时都用这一条路径）
+    private func applyPopoverSize() {
+        let raw = UserDefaults.standard.string(forKey: "popoverDensity")
+            ?? PopoverDensity.standard.rawValue
+        let tk = (PopoverDensity(rawValue: raw) ?? .standard).tokens
+        popover.contentSize = NSSize(width: tk.popoverWidth + 12, height: tk.popoverHeight)
+    }
+
     private func showFallbackWindow() {
         if let w = fallbackWindow {
             w.makeKeyAndOrderFront(nil)
@@ -326,13 +339,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.fallbackWindow = nil
         }
         let wc = NSWindowController(window: NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 600),
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "SolunaCal"
-        wc.window?.contentViewController = NSHostingController(rootView: view)
+        let hosting = NSHostingController(rootView: view)
+        hosting.sizingOptions = [.preferredContentSize]
+        wc.window?.contentViewController = hosting
         wc.window?.isReleasedWhenClosed = false
-        wc.window?.center()
         wc.showWindow(nil)
+        // 内容高度要等布局完成才知道：下一拍按理想尺寸收一下窗口
+        DispatchQueue.main.async {
+            let h = hosting.preferredContentSize.height
+            if h > 0 { wc.window?.setContentSize(NSSize(width: 340, height: h)) }
+            wc.window?.center()
+        }
         NSApp.activate(ignoringOtherApps: true)
         fallbackWindow = wc.window
         LaunchLog.write("菜单栏图标不可见，已开兜底窗口")
@@ -354,39 +374,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    /// NSPopover 不会因为 SwiftUI 内容变高而自己长大：选中日期后卡片多出几行，
-    /// 弹窗仍按旧高度显示，多出的差额会被压到某一行上（文字被切成半截）。
-    /// hosting controller 的 preferredContentSize 是「理想高度」，不受弹窗当前高度影响，
-    /// 因此显示期间按它同步；弹窗关闭后定时器自行停止。
-    private func startPopoverSizeSync() {
-        popoverSizeTimer?.invalidate()
-        popoverSizeTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            guard self.popover.isShown else {
-                self.popoverSizeTimer?.invalidate()
-                self.popoverSizeTimer = nil
-                return
-            }
-            guard let ideal = self.popoverHC?.preferredContentSize,
-                  ideal.height > 0, ideal.width > 0 else { return }
-            let screenH = (self.popover.contentViewController?.view.window?.screen
-                           ?? NSScreen.main)?.visibleFrame.height ?? 800
-            // 宽度必须取内容的理想宽度，不能写死：内容宽 = popoverWidth + 左右各 6pt 内边距，
-            // 三档密度分别是 276 / 312 / 348。写死 300 会让标准档窄 12pt、紧凑档反而变宽。
-            let target = NSSize(width: ideal.width, height: min(ideal.height, screenH - 120))
-            if abs(self.popover.contentSize.height - target.height) > 0.5 {
-                self.popover.contentSize = target
-            }
-        }
-    }
-
     @objc private func togglePopover() {        guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            startPopoverSizeSync()
-            popover.contentViewController?.view.window?.makeKey()
+                        popover.contentViewController?.view.window?.makeKey()
         }
     }
 
@@ -402,8 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self, let button = self.statusItem.button, !self.popover.isShown else { return }
             self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            startPopoverSizeSync()
-        }
+                    }
     }
 
     private func updateTitle() {
