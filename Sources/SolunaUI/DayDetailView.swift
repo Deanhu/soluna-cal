@@ -10,15 +10,18 @@ public struct DayDetailView: View {
     let calendar: Calendar
     let showYiji: Bool
     let onAddEvent: () -> Void
+    let onRequestAccess: () -> Void
 
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
                 showYiji: Bool,
-                onAddEvent: @escaping () -> Void) {
+                onAddEvent: @escaping () -> Void,
+                onRequestAccess: @escaping () -> Void = {}) {
         self.date = date
         self.calendar = calendar
         self.showYiji = showYiji
         self.onAddEvent = onAddEvent
+        self.onRequestAccess = onRequestAccess
     }
 
     private static let weekdayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -90,12 +93,18 @@ public struct DayDetailView: View {
             Divider().padding(.vertical, 1)
 
             if events.isEmpty {
-                HStack(spacing: 4) {
-                    Text(EventProvider.shared.authorized ? "当日无日程" : "授权系统日历后显示日程")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                HStack(spacing: 6) {
                     if EventProvider.shared.authorized {
-                        Text("· 双击日期可添加")
+                        Text("当日无日程").font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Text("· 双击日期可添加").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    } else {
+                        // 更新一次系统就会重问一次（ad-hoc 签名的 DR 就是二进制哈希），
+                        // 所以这里给按钮，而不是让人自己去系统设置里找
+                        Text("需要授权系统日历（更新后会重新询问）")
                             .font(.system(size: 10)).foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                        Button("授权") { onRequestAccess() }
+                            .buttonStyle(.link).font(.system(size: 10))
                     }
                 }
             } else {

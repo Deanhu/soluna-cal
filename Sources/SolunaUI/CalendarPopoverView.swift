@@ -44,9 +44,11 @@ public struct CalendarPopoverView: View {
             weekdayRow
             monthGrid
             if let sel = selectedDay {
-                DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled) {
-                    editingDay = sel
-                }
+                DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled,
+                              onAddEvent: { editingDay = sel },
+                              onRequestAccess: {
+                                  EventProvider.shared.requestAccessIfNeeded { refreshEvents() }
+                              })
             }
             if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
                 Text("宜 \(yj.yi)　忌 \(yj.ji)")
