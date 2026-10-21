@@ -27,4 +27,13 @@ public enum PopoverMonthRule {
     public static func countdownLabel(name: String, targetYear: Int, todayYear: Int) -> String {
         targetYear == todayYear ? name : "\(targetYear) 年\(name)"
     }
+
+    /// 「回到今天」之后应有的状态：月份翻到今天，**选中日也必须落到今天**。
+    ///
+    /// 只翻月是不够的：如果当前就停在这个月，`displayed` 赋同一个月的值等于没变，
+    /// 而选中日因为「同月内不清理」被保留 —— 点下去界面一动不动。
+    /// （2026-10-21 Dean 在 10 月里选中 22 号后点「回到今天」，什么都没发生。）
+    public static func backToTodayState(now: Date) -> (displayed: Date, selected: Date) {
+        (now, now)
+    }
 }

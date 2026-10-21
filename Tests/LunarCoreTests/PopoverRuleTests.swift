@@ -59,4 +59,25 @@ final class PopoverRuleTests: XCTestCase {
             PopoverMonthRule.countdownLabel(name: "国庆", targetYear: 2026, todayYear: 2026),
             "国庆")
     }
+
+    // MARK: 回到今天
+
+    /// Dean 2026-10-21 的场景：停在 10 月、选中 22 号，点「回到今天」什么都没变。
+    /// 根因是只改了 displayed —— 已经在这个月时它等于没变，选中日又因为
+    /// 「同月内不清理」被留着。选中日必须一起落到今天。
+    func testBackToTodayAlsoMovesSelection() {
+        let now = date(2026, 10, 21)
+        let s = PopoverMonthRule.backToTodayState(now: now)
+        XCTAssertEqual(cal.startOfDay(for: s.selected), cal.startOfDay(for: now),
+                       "「回到今天」必须选中今天，不能只翻月")
+        XCTAssertEqual(cal.startOfDay(for: s.displayed), cal.startOfDay(for: now))
+    }
+
+    /// 跨月也要一次到位：停在别的月份时，月份和选中日同时变
+    func testBackToTodayWorksFromAnotherMonth() {
+        let now = date(2027, 3, 5)
+        let s = PopoverMonthRule.backToTodayState(now: now)
+        XCTAssertTrue(cal.isDate(s.displayed, equalTo: now, toGranularity: .month))
+        XCTAssertTrue(cal.isDate(s.selected, equalTo: now, toGranularity: .day))
+    }
 }

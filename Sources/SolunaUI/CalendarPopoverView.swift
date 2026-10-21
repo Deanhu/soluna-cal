@@ -347,8 +347,12 @@ public struct CalendarPopoverView: View {
             Button(action: { onOpenSettings?() }) { Image(systemName: "gearshape") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             Button(action: {
-                displayed = Date()
-                clearSelectionOutsideDisplayed()
+                // 规则在 PopoverMonthRule 里，有单测：月份和选中日必须一起动。
+                // 原来只改 displayed：已经在这个月时 displayed 没变化、选中日又因为
+                // 「同月内不清理」被保留，点了完全没反应（Dean 2026-10-21 实测）。
+                let next = PopoverMonthRule.backToTodayState(now: Date())
+                displayed = next.displayed
+                selectedDay = next.selected
             }) { Text("回到今天") }
                 .buttonStyle(.plain).font(.system(size: t.footerFont)).foregroundStyle(Color.accentColor)
         }
