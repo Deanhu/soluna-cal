@@ -98,8 +98,14 @@ public struct SettingsView: View {
                     // 不在这里给一个按钮，用户就只能去「活动监视器」杀进程，
                     // 也就没法把 App 拖进废纸篓（系统拒删运行中的 App）。
                     HStack(spacing: 8) {
-                        Text("SolunaCal \(Self.versionText)")
-                            .font(.caption).foregroundStyle(.secondary)
+                        // 名字是生造的英文，第一次看到容易被当成拼写错误（朋友 B 拿它去问 AI，
+                        // 得到的回答是「可能是拼写错误，例如 solunac」）。名字不改，这里把来源写清楚。
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("SolunaCal \(Self.versionText)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Soluna = Sol（日）+ Luna（月），Cal = Calendar（日历）")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
                         Spacer()
                         Button("退出 SolunaCal") {
                             // 统一走 AppDelegate：带看门狗，万一被模态/窗口卡住也能退干净

@@ -186,7 +186,15 @@ EOF
 # 6. 打 DMG（UDZO 压缩，-ov 直接覆盖同名产物）+ 校验可挂载
 mkdir -p "$DIST"
 hdiutil create -volname "SolunaCal" -srcfolder "$STAGE" -ov -format UDZO "$DMG" | tail -1
-hdiutil verify "$DMG" >/dev/null && echo "DMG 校验 OK"
+# 注意：不能写成 `hdiutil verify "$DMG" >/dev/null && echo OK`。
+# `set -e` 不会因为 && 左边的命令失败而退出，校验失败会被静默跳过，
+# 结果就是一个可能损坏的 DMG 被当成成功产物（2026-10-21 实测到 verify 报
+# 「资源暂时不可用」但脚本照样打印「== 产物 ==」）。这里显式判定。
+if ! hdiutil verify "$DMG" >/dev/null; then
+    echo "!! DMG 校验失败：$DMG"
+    exit 1
+fi
+echo "DMG 校验 OK"
 echo "== 产物 =="
 ls -lh "$DMG"
 shasum -a 256 "$DMG"

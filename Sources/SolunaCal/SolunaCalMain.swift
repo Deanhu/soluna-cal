@@ -201,6 +201,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case "onboarding":
                 show("欢迎使用 Soluna", NSSize(width: 420, height: 320),
                      OnboardingView(hotKeyText: HotKeyManager.saved.display) {})
+            case "onboarding-name":
+                // 第 2 屏（index 1）是品牌名解释，单独留一个入口方便核对排版
+                show("欢迎使用 Soluna", NSSize(width: 420, height: 320),
+                     OnboardingView(initialPage: 1, hotKeyText: HotKeyManager.saved.display) {})
+            case "settings-tall":
+                // 加高版：只为看页脚（版本号 + 品牌名解释），真实窗口是 660 高、内容靠滚动
+                show("SolunaCal 设置", NSSize(width: 440, height: 1000),
+                     SettingsView(store: store))
             default:
                 show("SolunaCal 设置", NSSize(width: 440, height: 660),
                      SettingsView(store: store))
@@ -289,6 +297,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 启动后确认一次，藏了就开兜底窗口。
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.showFallbackIfStatusItemHidden()
+        }
+
+        // 诊断入口：本机没有辅助功能权限，点不了鼠标，这两条用来验「点完月份」和
+        // 「重新打开」的真实路径（跑的是生产代码，不是另写一份）。
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--simulate-year-pick=") }) {
+            runYearPickSimulation(String(flag.dropFirst("--simulate-year-pick=".count)))
+            return
+        }
+        if CommandLine.arguments.contains("--simulate-reopen") {
+            runReopenSimulation()
+            return
         }
 
         // 上次自动更新失败的话，必须让用户知道（脚本会在 Application Support 留记录）。
@@ -546,8 +565,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// 弹窗/兜底窗口共用同一份视图装配：模态一律走独立窗口，视图里不再有 sheet
-    private func makePopoverView(fixedHeight: Bool) -> CalendarPopoverView {
-        var v = CalendarPopoverView(store: store, fixedHeight: fixedHeight)
+    private func makePopoverView(fixedHeight: Bool, initialMonth: Date? = nil) -> CalendarPopoverView {
+        var v = CalendarPopoverView(store: store, initialMonth: initialMonth, fixedHeight: fixedHeight)
         v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
         v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
         v.onOpenYear = { [weak self] in self?.showYearWindow() }
@@ -652,13 +671,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     },
                     skin: UserDefaults.standard.currentSkin,
                     onPick: { month in
-                        let c = DateComponents(year: year, month: month, day: 1)
-                        if let d = Calendar(identifier: .gregorian).date(from: c) {
-                            NotificationCenter.default.post(name: .solunaJumpToMonth, object: d)
-                        }
+                        self.jumpToMonth(year: year, month: month)
                     }) { [weak self] in
                     self?.yearWindow?.close()
                 })
+    }
+
+    /// 年视图点了某个月之后要发生的事：弹窗跳到那个月，并把弹窗重新弹出来。
+    ///
+    /// 抽成方法是为了让诊断入口 `--simulate-year-pick` 能跑同一段代码 ——
+    /// 本机没有辅助功能权限，点不了鼠标，只能这样验真实路径而不是另写一份。
+    private func jumpToMonth(year: Int, month: Int) {
+        let c = DateComponents(year: year, month: month, day: 1)
+        let target = Calendar(identifier: .gregorian).date(from: c)
+        // 年窗口在 onPick 之后自己会关（YearOverviewView 里紧跟 closeWindow），
+        // 但弹窗不会自己回来 —— 不显式重开，用户点完月份屏幕上什么都不剩
+        // （朋友 B 报的「點擊某個月跳轉會消失」，录屏里点「1 月」后一片空白）。
+        // 延到下一轮：此刻年窗口还在，立刻开会让弹窗抢不到 key。
+        DispatchQueue.main.async { self.showPopover(startingAt: target) }
+    }
+
+    // MARK: 诊断入口（仅命令行触发，正常启动不会走到）
+
+    /// `--simulate-year-pick=YYYY-MM --out=x.png`
+    /// 走一遍「打开年视图 → 点某月」的真实路径，然后把弹窗内容渲染成 PNG 并报告
+    /// `popover.isShown`。用来证明：点完月份弹窗确实回来了，而且停在目标月份。
+    private func runYearPickSimulation(_ raw: String) {
+        let parts = raw.split(separator: "-")
+        guard parts.count == 2, let y = Int(parts[0]), let m = Int(parts[1]) else {
+            print("用法：--simulate-year-pick=YYYY-MM --out=<png>")
+            exit(2)
+        }
+        showYearWindow()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            self.jumpToMonth(year: y, month: m)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                self.capturePopoverAndExit(tag: "year-pick")
+            }
+        }
+    }
+
+    /// `--simulate-reopen --out=x.png`
+    /// 先跳到很远的月份，再关掉弹窗、重新打开 —— 证明重新打开时回到了今天。
+    private func runReopenSimulation() {
+        let cal = Calendar(identifier: .gregorian)
+        let today = Date()
+        let far = cal.date(byAdding: .month, value: 14, to: today) ?? today
+        let y = cal.component(.year, from: far)
+        let m = cal.component(.month, from: far)
+        jumpToMonth(year: y, month: m)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("after-jump popoverShown=\(self.popover.isShown)")
+            self.togglePopover()          // 关
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                print("before-reopen popoverShown=\(self.popover.isShown)")
+                self.togglePopover()      // 重新打开
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.capturePopoverAndExit(tag: "reopen")
+                }
+            }
+        }
+    }
+
+    /// 把弹窗的内容视图渲染成 PNG。缺 cacheDisplay 那步拿到的是空白位图。
+    private func capturePopoverAndExit(tag: String) {
+        print("\(tag) popoverShown=\(popover.isShown)")
+        guard let view = popover.contentViewController?.view else {
+            print("no-popover-view"); exit(1)
+        }
+        guard let outFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--out=") }) else {
+            print("missing --out"); exit(1)
+        }
+        let out = String(outFlag.dropFirst("--out=".count))
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            print("capture-failed"); exit(1)
+        }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else {
+            print("capture-failed"); exit(1)
+        }
+        try? png.write(to: URL(fileURLWithPath: out))
+        print("captured:", out, view.bounds.size)
+        exit(0)
     }
 
     private func showYijiWindow(_ day: Date) {
@@ -685,13 +779,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
+        guard statusItem.button != nil else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            showPopover()
         }
+    }
+
+    /// 把弹窗弹出来。
+    ///
+    /// 每次都重建内容视图，不复用上次那个 hosting controller：
+    /// `displayed` / `selectedDay` 是视图里的 @State，复用会让「上次翻到的月份」
+    /// 和「上次选中的日期」跨开关存活，而菜单栏标题一直写的是今天，两边对不上
+    /// （朋友 B 报的「再次點擊也不會刷新到最新的日期位置」）。
+    /// 重建顺带解决了「年视图选完月份」—— 目标月份直接当初始值传进来，
+    /// 不靠通知：弹窗没显示时 SwiftUI 的 onReceive 还没订阅上，通知会丢。
+    private func showPopover(startingAt month: Date? = nil) {
+        guard let button = statusItem.button else { return }
+        let view = makePopoverView(fixedHeight: true, initialMonth: month ?? Date())
+        let hc = NSHostingController(rootView: view)
+        hc.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hc
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     // MARK: 悬停弹出
@@ -704,8 +815,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ? UserDefaults.standard.double(forKey: "hoverDelay") : 0.4
         hoverTimer?.invalidate()
         hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            guard let self, let button = self.statusItem.button, !self.popover.isShown else { return }
-            self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            guard let self, self.statusItem.button != nil, !self.popover.isShown else { return }
+            // 与点击打开同一条路径：重建内容视图，回到今天再弹出来
+            self.showPopover()
         }
     }
 

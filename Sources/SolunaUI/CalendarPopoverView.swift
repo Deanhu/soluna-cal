@@ -92,8 +92,14 @@ public struct CalendarPopoverView: View {
         .onReceive(NotificationCenter.default.publisher(for: .locationDidUpdate)) { _ in
             locationTick += 1
         }
-        .onReceive(NotificationCenter.default.publisher(for: .solunaJumpToMonth)) { note in
-            if let d = note.object as? Date { displayed = d }
+    }
+
+    /// 翻月之后，选中日如果已经不在当前月，就清掉。
+    /// 规则本身在 LunarCore.PopoverMonthRule 里，有单测覆盖（视图里的私有逻辑测不到）。
+    private func clearSelectionOutsideDisplayed() {
+        if PopoverMonthRule.shouldClearSelection(selected: selectedDay, displayed: displayed, calendar: cal) {
+            selectedDay = nil
+            editingDay = nil
         }
     }
 
@@ -154,6 +160,7 @@ public struct CalendarPopoverView: View {
         let y = cal.component(.year, from: next)
         guard LunarCalendar.supportedRange.contains(y) else { return }
         displayed = next
+        clearSelectionOutsideDisplayed()
     }
 
     // MARK: 星期行
@@ -310,7 +317,10 @@ public struct CalendarPopoverView: View {
     private var footer: some View {
         HStack {
             if countdownEnabled, let next = HolidayStore.nextHoliday(after: Date()) {
-                Text("距 \(next.name) 还有 ")
+                // 跨年时把年份写出来。原来只写「距 元旦 还有 72 天」——
+                // 正翻到 2027 年 1 月、屏幕上就摆着元旦，底部还这么说，
+                // 分不清指的是哪个元旦（朋友 B 标了「容易有歧義」）。
+                Text("距 \(countdownLabel(for: next)) 还有 ")
                     .font(.system(size: t.footerFont)).foregroundStyle(.secondary)
                 + Text("\(next.days)").font(.system(size: t.footerFont, weight: .semibold))
                     .foregroundStyle(skin.countdownAccent)
@@ -319,10 +329,21 @@ public struct CalendarPopoverView: View {
             Spacer()
             Button(action: { onOpenSettings?() }) { Image(systemName: "gearshape") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-            Button(action: { displayed = Date() }) { Text("回到今天") }
+            Button(action: {
+                displayed = Date()
+                clearSelectionOutsideDisplayed()
+            }) { Text("回到今天") }
                 .buttonStyle(.plain).font(.system(size: t.footerFont)).foregroundStyle(Color.accentColor)
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
+    }
+
+    /// 倒计时目标的名字。规则在 LunarCore.PopoverMonthRule 里，有单测覆盖。
+    private func countdownLabel(for next: (name: String, date: Date, days: Int)) -> String {
+        PopoverMonthRule.countdownLabel(
+            name: next.name,
+            targetYear: cal.component(.year, from: next.date),
+            todayYear: cal.component(.year, from: Date()))
     }
 }
 
