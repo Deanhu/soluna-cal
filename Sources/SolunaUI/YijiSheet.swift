@@ -10,15 +10,18 @@ public struct YijiSheet: View {
     let yi: String
     let ji: String
     let calendar: Calendar
+    let skin: Skin
 
     @Environment(\.dismiss) private var dismiss
 
     public init(date: Date, yi: String, ji: String,
-                calendar: Calendar = Calendar(identifier: .gregorian)) {
+                calendar: Calendar = Calendar(identifier: .gregorian),
+                skin: Skin = .default) {
         self.date = date
         self.yi = yi
         self.ji = ji
         self.calendar = calendar
+        self.skin = skin
     }
 
     private var title: String {
@@ -33,8 +36,8 @@ public struct YijiSheet: View {
             Text("宜忌").font(.headline)
             Text(title).font(.caption).foregroundStyle(.secondary)
 
-            block("宜", yi)
-            block("忌", ji)
+            block("宜", yi, tint: skin.yijiGood)
+            block("忌", ji, tint: skin.yijiBad)
 
             HStack {
                 Spacer()
@@ -47,11 +50,9 @@ public struct YijiSheet: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private func block(_ label: String, _ items: String) -> some View {
+    private func block(_ label: String, _ items: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+            YijiLabelChip(label, tint: tint, fontSize: 10)
             Text(items)
                 .font(.system(size: 12))
                 .fixedSize(horizontal: false, vertical: true)

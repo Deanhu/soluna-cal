@@ -3,8 +3,8 @@ import LunarCore
 
 /// 选中日期的详情卡：把「这一天是什么日子」说全，而不是只列日程。
 ///
-/// 之前这块只显示「当日无日程」，选了日期几乎得不到信息；现在依次给：
-/// 公历 + 星期 → 农历 → 节气/节日 → 宜忌（可选）→ 当日日程。
+/// 依次给：公历 + 星期 → 农历 → 宜忌（可选）→ 当日日程。
+/// 宜忌只放两行摘要，完整内容点开 `YijiSheet`——三处渲染共用 `YijiSummary` / `YijiLabelChip`。
 public struct DayDetailView: View {
     let date: Date
     let calendar: Calendar
@@ -12,6 +12,7 @@ public struct DayDetailView: View {
     let skin: Skin
     let onAddEvent: () -> Void
     let onRequestAccess: () -> Void
+
     @State private var yijiSheetOpen = false
 
     public init(date: Date,
@@ -65,14 +66,10 @@ public struct DayDetailView: View {
                 Text("\(m)月\(d)日 \(weekday)")
                     .font(.system(size: 11, weight: .medium))
                 if let f = festivalText {
-                    Text(f)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.adaptive(light: 0xD43030, dark: 0xFF6961))
+                    Text(f).font(.system(size: 10)).foregroundStyle(skin.festivalText)
                 }
                 if let term = termText {
-                    Text(term)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.adaptive(light: 0xB8860B, dark: 0xE3B341))
+                    Text(term).font(.system(size: 10)).foregroundStyle(skin.termText)
                 }
                 Spacer(minLength: 0)
                 Button(action: onAddEvent) {
@@ -90,18 +87,15 @@ public struct DayDetailView: View {
             if showYiji, let yj = Yiji.on(date: date, calendar: calendar) {
                 // 一行塞「宜…忌…」时，忌会被整段挤掉；拆成两行各自省略，
                 // 至少两边都能看到开头；完整内容点开看。
-                VStack(alignment: .leading, spacing: 2) {
-                    yijiLine("宜", yj.yi, isGood: true)
-                    yijiLine("忌", yj.ji, isGood: false)
-                }
-                .padding(.trailing, 10)
-                .contentShape(Rectangle())
-                .onTapGesture { yijiSheetOpen = true }
-                .overlay(alignment: .trailing) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
+                YijiSummary(yi: yj.yi, ji: yj.ji, skin: skin)
+                    .padding(.trailing, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture { yijiSheetOpen = true }
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
             }
 
             Divider().padding(.vertical, 1)
@@ -144,28 +138,8 @@ public struct DayDetailView: View {
         .padding(.top, 4)
         .sheet(isPresented: $yijiSheetOpen) {
             if let yj = Yiji.on(date: date, calendar: calendar) {
-                YijiSheet(date: date, yi: yj.yi, ji: yj.ji, calendar: calendar)
+                YijiSheet(date: date, yi: yj.yi, ji: yj.ji, calendar: calendar, skin: skin)
             }
-        }
-    }
-
-    /// 宜 / 忌 各一行：标签做成小色标（宜绿 / 忌赭），内容保持次级灰——
-    /// 只给判断上色，正文不上色，避免整块变花。
-    private func yijiLine(_ label: String, _ items: String, isGood: Bool) -> some View {
-        let tint = isGood ? skin.yijiGood : skin.yijiBad
-        return HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(tint)
-                .fixedSize()                       // 不能被压缩，否则「宜/忌」会被切掉
-                .frame(width: 14, height: 13)
-                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
-            Text(items)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
         }
     }
 }

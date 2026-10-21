@@ -51,10 +51,7 @@ public struct CalendarPopoverView: View {
                               })
             }
             if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
-                Text("宜 \(yj.yi)　忌 \(yj.ji)")
-                    .font(.system(size: t.lunarFont))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                YijiSummary(yi: yj.yi, ji: yj.ji, skin: skin, fontSize: t.lunarFont)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8).padding(.top, 8)
             }
