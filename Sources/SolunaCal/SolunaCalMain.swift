@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
     private var popoverHC: NSHostingController<CalendarPopoverView>?
     private var popoverSizeTimer: Timer?
+    private var fallbackWindow: NSWindow?
     private var timer: Timer?
     private var hoverTimer: Timer?
     private let store = BirthdayStore()
@@ -205,6 +206,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.checkForUpdate(manual: false)
         }
 
+        // 菜单栏塞满时图标会被藏到刘海后面：新用户将看不到任何入口。
+        // 启动后确认一次，藏了就开兜底窗口。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.showFallbackIfStatusItemHidden()
+        }
+
         if Onboarding.needsOnboarding {
             LaunchLog.write("弹出首次引导窗口")
             showOnboarding()
@@ -262,6 +269,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !manual, UserDefaults.standard.string(forKey: key) == candidate.version { return }
         UserDefaults.standard.set(candidate.version, forKey: key)
         _ = UpdateInstaller.askAndInstall(candidate)
+    }
+
+    /// 判断菜单栏图标是否被系统藏起来了。
+    /// 有刘海的屏幕会给出刘海两侧的安全区；图标落在两个区之外就是被藏了。
+    private func statusItemIsHidden() -> Bool {
+        guard let button = statusItem.button,
+              let win = button.window,
+              let screen = win.screen ?? NSScreen.main else { return false }
+        let frame = win.frame
+        // 刚启动时窗口可能还没布局好（宽高为 0），此时不能判定为「被藏了」，
+        // 否则每次启动都会误弹兜底窗口
+        guard frame.width > 1, frame.height > 1 else { return false }
+        let zones = [screen.auxiliaryTopLeftArea, screen.auxiliaryTopRightArea].compactMap { $0 }
+        if zones.isEmpty {
+            // 没有刘海：只要窗口还在屏幕内就算可见
+            return !screen.frame.intersects(frame)
+        }
+        return !zones.contains { $0.intersects(frame) }
+    }
+
+    private func showFallbackIfStatusItemHidden(retry: Bool = true) {
+        if statusItemIsHidden() {
+            showFallbackWindow()
+            return
+        }
+        // 窗口还没布局好时（宽高为 0）结果不可信，1.2 秒后再看一眼
+        if retry, let win = statusItem.button?.window,
+           win.frame.width <= 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                self?.showFallbackIfStatusItemHidden(retry: false)
+            }
+        }
+    }
+
+    /// 兜底窗口：说明为什么看不到图标 + 一个能用的日历
+    private func showFallbackWindow() {
+        if let w = fallbackWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let view = FallbackWindowView(store: store,
+                                      hotKeyText: HotKeyManager.saved.display) { [weak self] in
+            self?.fallbackWindow?.close()
+            self?.fallbackWindow = nil
+        }
+        let wc = NSWindowController(window: NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 560),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false))
+        wc.window?.title = "SolunaCal"
+        wc.window?.contentViewController = NSHostingController(rootView: view)
+        wc.window?.isReleasedWhenClosed = false
+        wc.window?.center()
+        wc.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        fallbackWindow = wc.window
+        LaunchLog.write("菜单栏图标不可见，已开兜底窗口")
+    }
+
+    /// 图标看不见时，双击 App 是唯一自然的入口：重新打开就给窗口
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // 图标在 → 老老实实弹菜单栏面板，不要莫名多一个窗口
+        if statusItemIsHidden() {
+            showFallbackWindow()
+        } else if !popover.isShown {
+            togglePopover()
+        }
+        return true
     }
 
     @objc private func quitApp() {
