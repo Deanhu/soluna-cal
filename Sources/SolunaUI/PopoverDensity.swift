@@ -33,15 +33,15 @@ public enum PopoverDensity: String, CaseIterable, Identifiable {
         switch self {
         case .compact:
             return Tokens(popoverWidth: 264, numberFont: 12, lunarFont: 9,
-                          badgeFont: 9, badgeStripHeight: 12, todayCircle: 20,
+                          badgeFont: 8, badgeStripHeight: 16, todayCircle: 20,
                           eventDot: 4, rowSpacing: 1, footerFont: 10)
         case .standard:
             return Tokens(popoverWidth: 300, numberFont: 13, lunarFont: 10,
-                          badgeFont: 10, badgeStripHeight: 13, todayCircle: 22,
+                          badgeFont: 9, badgeStripHeight: 18, todayCircle: 22,
                           eventDot: 5, rowSpacing: 2, footerFont: 11)
         case .comfortable:
             return Tokens(popoverWidth: 336, numberFont: 14, lunarFont: 11,
-                          badgeFont: 11, badgeStripHeight: 14, todayCircle: 24,
+                          badgeFont: 10, badgeStripHeight: 20, todayCircle: 24,
                           eventDot: 5, rowSpacing: 3, footerFont: 12)
         }
     }

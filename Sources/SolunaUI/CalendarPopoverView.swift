@@ -203,6 +203,9 @@ public struct CalendarPopoverView: View {
                     Circle().strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
                         .opacity(isSelected(cell) && !cell.isToday ? 1 : 0)
                 )
+                // 角标贴数字，而不是贴格子边缘：贴边缘时它会被读成「右边那一格」的角标，
+                // 假期色带里还会半个悬在带外
+                .overlay(alignment: .topTrailing) { badgeTag(cell) }
             // 农历小字（非当月格不显示，避免噪音）
             Text(cell.inMonth ? cell.lunarText : " ")
                 .font(.system(size: t.lunarFont,
@@ -214,8 +217,6 @@ public struct CalendarPopoverView: View {
         .padding(.top, t.badgeStripHeight * 0.5)
         .frame(maxWidth: .infinity)
         .background(bandBg(cell))
-        // 角标叠在预留位右上角：落在色带内，也不压到上一行
-        .overlay(alignment: .topTrailing) { badgeTag(cell) }
         // 事件点浮在行间空隙里，不占一行高（没有日程时那里本来就是空白）
         .overlay(alignment: .bottom) {
             Circle()
@@ -245,7 +246,9 @@ public struct CalendarPopoverView: View {
                 .padding(.horizontal, 2)
                 .background(badgeBg(cell))
                 .clipShape(RoundedRectangle(cornerRadius: 3))
-                .padding(.trailing, 3)
+                // 贴在数字圆右上角的外侧：上移到预留位内，右移一点避开数字笔画。
+                // 预留位高度 = badgeStripHeight/2，角标高于这个值就会压到数字上。
+                .offset(x: 2, y: -t.badgeStripHeight / 2 + 2)
         }
     }
 
