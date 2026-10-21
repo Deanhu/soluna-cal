@@ -271,6 +271,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = UpdateInstaller.askAndInstall(candidate)
     }
 
+    /// 闪两下菜单栏图标：刚看完引导的人需要知道「东西在哪」
+    private func flashStatusItem(times: Int = 2) {
+        guard let button = statusItem.button else { return }
+        for i in 0..<times {
+            let delay = Double(i) * 0.7
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { button.highlight(true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.35) { button.highlight(false) }
+        }
+    }
+
     /// 判断菜单栏图标是否被系统藏起来了。
     /// 有刘海的屏幕会给出刘海两侧的安全区；图标落在两个区之外就是被藏了。
     private func statusItemIsHidden() -> Bool {
@@ -411,15 +421,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         let wc = NSWindowController(window: NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "欢迎使用 Soluna"
         wc.window?.contentViewController = NSHostingController(
-            rootView: OnboardingView {
+            rootView: OnboardingView(hotKeyText: HotKeyManager.saved.display) {
                 Onboarding.markCompleted()
                 // 引导里可能刚打开提醒：立刻排期，别等下一次启动
                 NotificationManager.reschedule(store: self.store)
                 wc.close()
+                // 引导刚讲完「图标在右上角」，这里立刻指一下位置：
+                // 图标在就闪两下，图标被藏就直接开兜底窗口
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    guard let self else { return }
+                    if self.statusItemIsHidden() {
+                        self.showFallbackWindow()
+                    } else {
+                        self.flashStatusItem()
+                    }
+                }
             })
         wc.window?.center()
         wc.showWindow(nil)
