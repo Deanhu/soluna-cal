@@ -60,6 +60,25 @@ targets:
         embed: true
       - target: SolunaWidget
         embed: true
+    # 显式 Info.plist：GENERATE_INFOPLIST_FILE 只把白名单里的 INFOPLIST_KEY_*
+    # 写进 plist，NSCalendarsFullAccessUsageDescription 不在白名单里会被静默丢弃
+    # （2026-10-21 实测：设置传进了 build settings，但产物 Info.plist 里没有这个键）。
+    # 缺键的后果是 requestFullAccessToEvents 不弹框、直接回调 granted=false，
+    # 界面上就是「点授权没反应」。所以权限说明必须写在这个文件里，不能靠构建设置。
+    info:
+      path: Config/SolunaCal-Info.plist
+      properties:
+        LSUIElement: true
+        NSHumanReadableCopyright: SolunaCal
+        # 版本号必须走变量：xcodegen 默认会写死 1.0，
+        # 那样 CFBundleShortVersionString 就和 MARKETING_VERSION 键脱钩了（更新检查会失灵）
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # macOS 14 起 requestFullAccessToEvents 只认这个键
+        NSCalendarsFullAccessUsageDescription: "读取日程用于月历展示；双击日期可创建事件写回系统日历"
+        # requestAccess(to:) 时代用的旧键，留着给旧系统兜底
+        NSCalendarsUsageDescription: "读取日程用于月历展示；双击日期可创建事件写回系统日历"
+        NSLocationWhenInUseUsageDescription: "真太阳时校正需要一次定位获取经度；拒绝则按东八区中央经线计算"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal
@@ -70,13 +89,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         # 应用图标（Sources/SolunaCal/Assets.xcassets/AppIcon）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # 菜单栏纯配件应用：不出现在 Dock
-        INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_NSHumanReadableCopyright: "SolunaCal"
-        INFOPLIST_KEY_NSCalendarsUsageDescription: "读取日程用于月历展示；双击日期可创建事件写回系统日历"
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "真太阳时校正需要一次定位获取经度；拒绝则按东八区中央经线计算"
-        CURRENT_PROJECT_VERSION: "34"
-        MARKETING_VERSION: "0.4.9"
+        CURRENT_PROJECT_VERSION: "35"
+        MARKETING_VERSION: "0.4.10"
 
   SolunaWidget:
     type: app-extension
@@ -89,8 +103,8 @@ targets:
         PRODUCT_NAME: SolunaWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.soluna.cal.widget
         INFOPLIST_FILE: Sources/SolunaWidget/Info.plist
-        CURRENT_PROJECT_VERSION: "34"
-        MARKETING_VERSION: "0.4.9"
+        CURRENT_PROJECT_VERSION: "35"
+        MARKETING_VERSION: "0.4.10"
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../Frameworks"

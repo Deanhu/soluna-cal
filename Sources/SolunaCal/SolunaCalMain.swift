@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import SwiftUI
 import LunarCore
 import SolunaUI
@@ -33,10 +34,15 @@ enum SolunaCalMain {
                 exit(2)
             }
             var finished = false
-            EventProvider.shared.requestAccessIfNeeded {
+            // 必须写 `then:`：两个参数都是闭包，裸尾随闭包会绑到最后一个
+            // （onDenied），结果是授权成功也不打印，看起来像「回调没回来」
+            EventProvider.shared.requestAccessIfNeeded(then: {
                 print(EventProvider.shared.dump(date: day))
                 finished = true
-            }
+            }, onDenied: {
+                print("未获日历权限：\(EventProvider.shared.authorized ? "" : "系统未授权")")
+                finished = true
+            })
             // 手动泵主 RunLoop：授权回调投递在主队列，直接 sleep 会死锁
             let deadline = Date().addingTimeInterval(20)
             while !finished, Date() < deadline {
@@ -86,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var restorePopoverOnPanelClose = false
     /// 退出过程中窗口关闭不该再把弹窗弹出来
     private var isTerminating = false
+    /// `--request-calendar` 探针用的 store：必须活到回调回来，
+    /// 否则请求发出去就随对象释放一起作废（回调立刻 false）
+    private static var probeStore: EKEventStore?
     private let store = BirthdayStore()
 
     /// 菜单栏形态（0=纯文字 1=图标+文字 2=纯图标）。
@@ -299,6 +308,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // 诊断入口：本机没有辅助功能权限，点不了鼠标，这两条用来验「点完月份」和
         // 「重新打开」的真实路径（跑的是生产代码，不是另写一份）。
+        //
+        // 用 UserDefaults 开关而不是命令行参数触发授权探针：
+        // `open -a ... --args` 实测传不进参数（日志里看不到探针输出），
+        // 而 TCC 又必须经 LaunchServices 启动才按本 App 归因 ——
+        // 从终端直接跑二进制，请求会算在责任进程（终端/宿主）头上。
+        if UserDefaults.standard.bool(forKey: "probeCalendarOnLaunch") {
+            UserDefaults.standard.removeObject(forKey: "probeCalendarOnLaunch")
+            runCalendarAuthProbe()
+            return
+        }
         if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--simulate-year-pick=") }) {
             runYearPickSimulation(String(flag.dropFirst("--simulate-year-pick=".count)))
             return
@@ -313,6 +332,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if CommandLine.arguments.contains("--simulate-panel-close") {
             runPanelCloseSimulation()
+            return
+        }
+        if CommandLine.arguments.contains("--request-calendar") {
+            runCalendarAuthProbe()
+            return
+        }
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--capture-access-card=") }) {
+            runAccessCardCapture(String(flag.dropFirst("--capture-access-card=".count)))
             return
         }
         if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--simulate-local-event=") }) {
@@ -576,9 +603,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// 弹窗/兜底窗口共用同一份视图装配：模态一律走独立窗口，视图里不再有 sheet
     private func makePopoverView(fixedHeight: Bool, initialMonth: Date? = nil,
-                                 initialSelected: Date? = nil) -> CalendarPopoverView {
+                                 initialSelected: Date? = nil,
+                                 initialAccessDenied: Bool = false) -> CalendarPopoverView {
         var v = CalendarPopoverView(store: store, initialMonth: initialMonth,
-                                    initialSelected: initialSelected, fixedHeight: fixedHeight)
+                                    initialSelected: initialSelected, fixedHeight: fixedHeight,
+                                    initialAccessDenied: initialAccessDenied)
         v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
         v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
         v.onOpenYear = { [weak self] month in self?.showYearWindow(containing: month) }
@@ -866,6 +895,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// `--capture-access-card=normal|denied --out=x.png`
+    /// 详情卡在「未授权」和「点过授权但没拿到」两种状态下的样子。
+    /// 后者是「授权按钮点了没反应」之后补的：按钮不能点完界面毫无变化。
+    private func runAccessCardCapture(_ mode: String) {
+        let today = Date()
+        showPopover(startingAt: today, selected: today, accessDenied: mode == "denied")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            self.capturePopoverAndExit(tag: "access-\(mode)")
+        }
+    }
+
+    /// `--request-calendar`
+    /// 真跑一次 requestFullAccessToEvents，把「请求前状态 / 回调有没有回来 / 请求后状态」
+    /// 全部打出来。用来区分「按钮没触发」和「触发了但系统不弹框」。
+    ///
+    /// 同时写一份到启动日志：从终端直接跑二进制时，TCC 会把请求归因到责任进程
+    /// （终端 / 宿主），它们没有日历权限声明 → 一样是静默 granted=false。
+    /// 真实场景必须经 LaunchServices 启动（`open -a`），那条路的 stdout 拿不到，
+    /// 只能靠日志文件把结果带出来。
+    private func runCalendarAuthProbe() {
+        func name(_ s: EKAuthorizationStatus) -> String {
+            switch s {
+            case .notDetermined: return "notDetermined"
+            case .restricted: return "restricted"
+            case .denied: return "denied"
+            case .fullAccess: return "fullAccess"
+            case .writeOnly: return "writeOnly"
+            @unknown default: return "unknown(\(s.rawValue))"
+            }
+        }
+        func report(_ line: String) {
+            print(line)
+            LaunchLog.write("authprobe \(line)")
+        }
+        let before = EKEventStore.authorizationStatus(for: .event)
+        report("before=\(name(before)) raw=\(before.rawValue)")
+        NSApp.activate(ignoringOtherApps: true)
+        // 必须持有强引用：写成 `EKEventStore().requestFullAccessToEvents {...}`
+        // 时那个 store 在方法返回后立刻被释放，回调会马上收到 granted=false，
+        // 看起来跟「系统不弹框」一模一样 —— 探针自己造的假象。
+        let probeStore = EKEventStore()
+        Self.probeStore = probeStore
+        probeStore.requestFullAccessToEvents { granted, err in
+            let after = EKEventStore.authorizationStatus(for: .event)
+            report("callback granted=\(granted) err=\(err?.localizedDescription ?? "-") after=\(name(after))")
+            exit(0)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            let after = EKEventStore.authorizationStatus(for: .event)
+            report("TIMEOUT 回调没回来 after=\(name(after)) raw=\(after.rawValue)")
+            exit(3)
+        }
+    }
+
     /// 把弹窗的内容视图渲染成 PNG
     private func capturePopoverAndExit(tag: String) {
         print("\(tag) popoverShown=\(popover.isShown)")
@@ -916,10 +999,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// （朋友 B 报的「再次點擊也不會刷新到最新的日期位置」）。
     /// 重建顺带解决了「年视图选完月份」—— 目标月份直接当初始值传进来，
     /// 不靠通知：弹窗没显示时 SwiftUI 的 onReceive 还没订阅上，通知会丢。
-    private func showPopover(startingAt month: Date? = nil, selected: Date? = nil) {
+    private func showPopover(startingAt month: Date? = nil, selected: Date? = nil,
+                             accessDenied: Bool = false) {
         guard let button = statusItem.button else { return }
         let view = makePopoverView(fixedHeight: true, initialMonth: month ?? Date(),
-                                   initialSelected: selected)
+                                   initialSelected: selected,
+                                   initialAccessDenied: accessDenied)
         let hc = NSHostingController(rootView: view)
         hc.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hc

@@ -12,6 +12,8 @@ public struct DayDetailView: View {
     let skin: Skin
     let onAddEvent: () -> Void
     let onRequestAccess: () -> Void
+    /// 点过「授权」但没拿到权限：换成一句能照做的指引，别再给同一个按钮
+    let accessDenied: Bool
     /// 打开完整宜忌（作为独立窗口）。sheet 挂在 NSPopover 上会变幽灵窗口，不能用
     let onOpenYiji: ((Date) -> Void)?
 
@@ -21,6 +23,7 @@ public struct DayDetailView: View {
                 skin: Skin = .default,
                 onAddEvent: @escaping () -> Void,
                 onRequestAccess: @escaping () -> Void = {},
+                accessDenied: Bool = false,
                 onOpenYiji: ((Date) -> Void)? = nil) {
         self.date = date
         self.calendar = calendar
@@ -28,6 +31,7 @@ public struct DayDetailView: View {
         self.skin = skin
         self.onAddEvent = onAddEvent
         self.onRequestAccess = onRequestAccess
+        self.accessDenied = accessDenied
         self.onOpenYiji = onOpenYiji
     }
 
@@ -107,6 +111,16 @@ public struct DayDetailView: View {
                     if EventProvider.shared.canWriteToSystem {
                         Text("当日无日程").font(.system(size: 10)).foregroundStyle(.tertiary)
                         Text("· 双击日期可添加").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    } else if accessDenied {
+                        // 已经点过一次、没拿到权限：再给同一个按钮不会有新结果。
+                        // 分两行写 —— 挤在一行会被截成「…隐私与安全性 ›…」，
+                        // 用户看不到「日历」两个字，等于没告诉他去哪儿。
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("未授权系统日历 · 新日程只存本机")
+                                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                            Text("到「系统设置 › 隐私与安全性 › 日历」里打开")
+                                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        }
                     } else {
                         // 没授权也能记，只是存在本机。这里把差别讲清楚，
                         // 再给一个授权入口（更新一次系统就会重问一次，ad-hoc 签名的 DR 是二进制哈希）

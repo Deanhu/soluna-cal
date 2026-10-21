@@ -3,5 +3,7 @@ DerivedData/
 *.xcuserstate
 .DS_Store
 SolunaCal.xcodeproj/
+# 由 project.yml 的 info 块生成（与 .xcodeproj 同理，不入库）
+Config/
 dist/
 .workbuddy-ai/

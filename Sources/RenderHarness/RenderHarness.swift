@@ -104,7 +104,10 @@ enum RenderHarnessMain {
             hosting = NSHostingView(rootView: AnyView(
                 OnboardingView(initialPage: startPage, onFinish: {})))
         } else {
-            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(store: store, initialMonth: initialMonth, initialSelected: initialSelected)))
+            hosting = NSHostingView(rootView: AnyView(CalendarPopoverView(
+                store: store, initialMonth: initialMonth, initialSelected: initialSelected,
+                // --access-denied：渲染「点过授权但没拿到权限」那一版详情卡
+                initialAccessDenied: args.contains("--access-denied"))))
         }
         // --dark：强制深色外观，用于深色模式自查
         if args.contains("--dark") {

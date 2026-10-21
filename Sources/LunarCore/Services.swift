@@ -2,6 +2,7 @@ import Foundation
 import EventKit
 import ServiceManagement
 import Combine
+import AppKit
 
 /// 宜忌查询（数据见 Generated/YijiData.swift，2025–2027 内置）
 public enum Yiji {
@@ -117,14 +118,33 @@ public final class EventProvider: ObservableObject {
     @Published public private(set) var authorized = false
 
     /// 请求授权；授权通过后立即执行 completion（用于首刷当月事件点）
-    public func requestAccessIfNeeded(then completion: (() -> Void)? = nil) {
+    ///
+    /// `onDenied` 只在**用户主动点「授权」**时传：系统没弹框（状态仍是
+    /// notDetermined）或用户以前拒过时，光把 `authorized` 置 false，界面上
+    /// 什么都不会变 —— 用户看到的就是「点了没反应」。所以这里必须给一个
+    /// 看得见的落点（打开系统设置面板 + 卡片里出提示）。
+    /// 不要放进 popover 自动刷新里，否则每次开弹窗都会弹设置面板。
+    public func requestAccessIfNeeded(then completion: (() -> Void)? = nil,
+                                      onDenied: (() -> Void)? = nil) {
         // macOS 14+ 新 API（我们的部署目标即 14，无需回退分支）
         store.requestFullAccessToEvents { [weak self] granted, _ in
             DispatchQueue.main.async {
                 self?.authorized = granted
-                if granted { completion?() }
+                if granted {
+                    completion?()
+                } else {
+                    onDenied?()
+                }
             }
         }
+    }
+
+    /// 打开「系统设置 › 隐私与安全性 › 日历」。
+    /// 系统一旦记成「已拒绝」就再也不会弹框，只能由用户去这里打开；
+    /// 这是我们唯一能替他缩短的一步。
+    public func openPrivacySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!
+        NSWorkspace.shared.open(url)
     }
 
     /// 拉取某月有事件的日期集合（只读）

@@ -24,11 +24,14 @@ public struct CalendarPopoverView: View {
 
     public init(store: BirthdayStore, initialMonth: Date? = nil,
                 initialSelected: Date? = nil,
-                fixedHeight: Bool = true) {
+                fixedHeight: Bool = true,
+                initialAccessDenied: Bool = false) {
         self.fixedHeight = fixedHeight
         self.store = store
         _displayed = State(initialValue: initialMonth ?? Date())
         _selectedDay = State(initialValue: initialSelected)
+        // 只给离屏渲染用：正常运行时它由「点授权没拿到权限」置位
+        _accessDenied = State(initialValue: initialAccessDenied)
     }
     @ObservedObject var store: BirthdayStore
     /// 弹窗与「新建日程」窗口是两棵视图树：不观察 EventProvider，
@@ -37,6 +40,10 @@ public struct CalendarPopoverView: View {
     @State private var displayed: Date
     @State private var selectedDay: Date?
     @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
+    /// 点过「授权」但没拿到权限（系统没弹框 / 以前拒过）。
+    /// 详情卡据此把「授权」换成一句能照做的指引 —— 否则按钮点完界面毫无变化，
+    /// 用户只能得出「这个按钮坏了」。
+    @State private var accessDenied = false
     @AppStorage("yijiEnabled") private var yijiEnabled = false
     @AppStorage("countdownEnabled") private var countdownEnabled = true
     @AppStorage("popoverDensity") private var densityRaw = PopoverDensity.standard.rawValue
@@ -60,8 +67,15 @@ public struct CalendarPopoverView: View {
                 DayDetailView(date: sel, calendar: cal, showYiji: yijiEnabled, skin: skin,
                               onAddEvent: { onEditEvent?(sel) },
                               onRequestAccess: {
-                                  EventProvider.shared.requestAccessIfNeeded { refreshEvents() }
+                                  EventProvider.shared.requestAccessIfNeeded(then: { refreshEvents() },
+                                                                             onDenied: {
+                                      accessDenied = true
+                                      // 系统一旦记成「已拒绝」就永不再弹框，
+                                      // 只能由用户去设置里打开 —— 直接把面板送到他面前
+                                      EventProvider.shared.openPrivacySettings()
+                                  })
                               },
+                              accessDenied: accessDenied,
                               onOpenYiji: { d in onOpenYiji?(d) })
             }
             if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
@@ -101,11 +115,11 @@ public struct CalendarPopoverView: View {
         }
     }
 
+    /// 只刷新，不请求授权。
+    /// 原来这里顺手调了 `requestAccessIfNeeded`，等于每次开弹窗都可能弹系统框；
+    /// 加上授权失败后会打开设置面板，那样就成了「一开弹窗就跳设置」。
+    /// 请求授权只发生在两处用户明确表达意图的地方：点「授权」、双击日期建日程。
     private func refreshEvents() {
-        EventProvider.shared.requestAccessIfNeeded { [self] in
-            EventProvider.shared.refresh(year: cal.component(.year, from: displayed),
-                                         month: cal.component(.month, from: displayed))
-        }
         EventProvider.shared.refresh(year: cal.component(.year, from: displayed),
                                      month: cal.component(.month, from: displayed))
     }

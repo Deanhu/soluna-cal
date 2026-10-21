@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import Foundation
 
 /// `--selfcheck`：一条命令完成环境自检，输出可直接截图发回。
@@ -37,7 +38,30 @@ enum SelfCheck {
             print("✓ 已清除")
         }
 
-        // 3. 内嵌组件是否齐（缺了会在启动瞬间退出，什么都不显示）
+        // 3. 日历权限：决定「新建日程」写系统日历还是只存本机。
+        //    用户报「点授权没反应」基本都是这里已经是 denied ——
+        //    被拒之后系统不会再弹窗，点按钮当然什么都不发生。
+        section("日历权限")
+        let auth = EKEventStore.authorizationStatus(for: .event)
+        switch auth {
+        case .notDetermined:
+            print("· 尚未询问（下次点「授权」时系统会弹窗）")
+        case .denied:
+            print("✗ 已被拒绝 —— 系统不会再弹窗，所以点「授权」不会有任何反应")
+            print("  → 去「系统设置 → 隐私与安全性 → 日历」把 SolunaCal 勾上")
+            problems.append("日历权限被拒，系统不会再弹窗")
+        case .restricted:
+            print("✗ 受系统限制（家长控制 / 设备管理），无法授权")
+            problems.append("日历权限受系统限制")
+        case .fullAccess:
+            print("✓ 已授权（完全访问）")
+        case .writeOnly:
+            print("△ 只有写入权限：能建日程，但读不到已有日程（月历不显示小圆点）")
+        @unknown default:
+            print("? 未知状态 raw=\(auth.rawValue)")
+        }
+
+        // 4. 内嵌组件是否齐（缺了会在启动瞬间退出，什么都不显示）
         section("内嵌组件")
         let frameworks = ["LunarCore", "SolunaUI"]
         for name in frameworks {

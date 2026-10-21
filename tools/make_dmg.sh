@@ -15,7 +15,14 @@ WORK="$ROOT/.workbuddy-ai/scratch/dmg"          # 构建中间产物（不进 Gi
 STAMP=$(date +%Y%m%d-%H%M%S)
 STAGE="$WORK/stage-$STAMP"
 DIST="$ROOT/dist"
-VERSION=$(grep -m1 'MARKETING_VERSION' "$ROOT/project.yml" | sed 's/.*"\(.*\)".*/\1/')
+# 只认行首的 `MARKETING_VERSION:` 键。
+# 不能再用 `grep -m1 'MARKETING_VERSION'`：注释里提到这个词就会被当成版本号，
+# 2026-10-21 实际踩过 —— 产物名变成一整句中文注释。
+VERSION=$(grep -E '^[[:space:]]*MARKETING_VERSION:' "$ROOT/project.yml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+case "$VERSION" in
+    [0-9]*) : ;;
+    *) echo "无法从 project.yml 取出版本号（得到「$VERSION」），中止"; exit 1 ;;
+esac
 DMG="$DIST/SolunaCal-$VERSION.dmg"
 
 echo "== 版本 $VERSION =="
