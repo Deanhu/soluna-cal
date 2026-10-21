@@ -108,10 +108,17 @@ public struct CalendarPopoverView: View {
 
     // MARK: 头部
 
+    /// 翻月按钮的点击区尺寸。只有约 10pt 的箭头本身不好点，
+    /// 视觉不变（箭头仍在框内居中），但命中区放大到 24×24。
+    private let monthHit: CGFloat = 24
+
     private var header: some View {
         HStack {
             Button(action: { shiftMonth(-1) }) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .frame(width: monthHit, height: monthHit)
+                .contentShape(Rectangle())
+                .accessibilityLabel("上个月")
             Spacer()
             Button(action: { onOpenYear?() }) {
                 HStack(spacing: 2) {
@@ -125,6 +132,9 @@ public struct CalendarPopoverView: View {
             Spacer()
             Button(action: { shiftMonth(1) }) { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .frame(width: monthHit, height: monthHit)
+                .contentShape(Rectangle())
+                .accessibilityLabel("下个月")
         }
         .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
     }
