@@ -32,38 +32,44 @@ public struct FallbackWindowView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .font(.system(size: 14))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("菜单栏没有位置了")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("SolunaCal 的图标被挤到刘海后面，所以你看不到它。\n按住 ⌘ 把不用的菜单栏图标拖走，图标就会露出来；也可以随时按 \(hotKeyText) 呼出这个面板。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-                Button("知道了") { onClose() }
-                    .controlSize(.small)
-            }
-            .padding(12)
-            .background(Color.adaptive(light: 0xFFF4E5, dark: 0x3A2E1C))
-
+            banner
             Divider()
-
-            // 定宽与真实窗口一致（340）：离屏渲染按内容理想宽度出图会偏宽，
-            // 定宽后渲染结果和真机一致，也保证日历在窗口里居中
-            var popover = CalendarPopoverView(store: store, fixedHeight: false)
-            popover.onOpenSettings = onRequestSettings
-            popover.onOpenYear = onRequestYear
-            popover.onEditEvent = onEditEvent
-            popover.onOpenYiji = onOpenYiji
-            return popover
-                .frame(maxWidth: .infinity)
+            calendar
         }
         .frame(width: 340)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// 橙色横幅：说清「为什么看不到图标」和「现在能怎么办」
+    private var banner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.system(size: 14))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("菜单栏没有位置了")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("SolunaCal 的图标被挤到刘海后面，所以你看不到它。\n按住 ⌘ 把不用的菜单栏图标拖走，图标就会露出来；也可以随时按 \(hotKeyText) 呼出这个面板。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("知道了") { onClose() }
+                .controlSize(.small)
+        }
+        .padding(12)
+        .background(Color.adaptive(light: 0xFFF4E5, dark: 0x3A2E1C))
+    }
+
+    /// 内嵌日历：四条弹窗入口全部透传，兜底窗口和弹窗行为一致
+    private var calendar: some View {
+        var popover = CalendarPopoverView(store: store, fixedHeight: false)
+        popover.onOpenSettings = onRequestSettings
+        popover.onOpenYear = onRequestYear
+        popover.onEditEvent = onEditEvent
+        popover.onOpenYiji = onOpenYiji
+        return popover
+            .frame(maxWidth: .infinity)
     }
 }

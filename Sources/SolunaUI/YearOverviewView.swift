@@ -27,13 +27,20 @@ public struct YearOverviewView: View {
         self.onClose = onClose
     }
 
+    /// 关窗：作为独立窗口时 onClose，退化场景（sheet）才用 dismiss。
+    /// 直接调 dismiss 在窗口宿主里是空操作——点了「关闭」窗口不动，
+    /// 这正是「点了没反应」这类反馈的来源。
+    private func closeWindow() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("\(String(year)) 年").font(.headline)
                 Spacer()
                 Text("点某个月跳过去").font(.caption).foregroundStyle(.secondary)
-                Button("关闭") { dismiss() }
+                Button("关闭") { closeWindow() }
                     .buttonStyle(.plain).font(.caption).foregroundStyle(Color.accentColor)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
@@ -88,7 +95,7 @@ public struct YearOverviewView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             onPick(month)
-            dismiss()
+            closeWindow()
         }
     }
 

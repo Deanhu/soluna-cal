@@ -31,9 +31,10 @@ public struct CalendarPopoverView: View {
         _editingDay = State(initialValue: initialEditing)
     }
     @ObservedObject var store: BirthdayStore
+    /// 弹窗与「新建日程」窗口是两棵视图树：不观察 EventProvider，
+    /// 窗口里保存的日程要等下次翻月/重开弹窗才刷新（sheet 时代共树所以不暴露）
+    @ObservedObject var eventProvider = EventProvider.shared
     @State private var displayed: Date
-    @State private var showSettings = false
-    @State private var showYear = false
     @State private var selectedDay: Date?
     @State private var editingDay: Date?
     @State private var locationTick = 0   // 定位成功后 bump，强制重算干支行
@@ -61,12 +62,21 @@ public struct CalendarPopoverView: View {
                               onAddEvent: { editingDay = sel },
                               onRequestAccess: {
                                   EventProvider.shared.requestAccessIfNeeded { refreshEvents() }
-                              })
+                              },
+                              onOpenYiji: { d in onOpenYiji?(d) })
             }
             if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
+                // 与详情卡里的宜忌摘要同一套排版；未选中日期时也要能点开完整内容
                 YijiSummary(yi: yj.yi, ji: yj.ji, skin: skin, fontSize: t.lunarFont)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8).padding(.top, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onOpenYiji?(Date()) }
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
             }
             // 尺寸固定后，多出来的空间在这里吸收；内容超出则由卡片内部滚动
             Spacer(minLength: 0)
@@ -209,12 +219,11 @@ public struct CalendarPopoverView: View {
         // 事件点浮在行间空隙里，不占一行高（没有日程时那里本来就是空白）
         .overlay(alignment: .bottom) {
             Circle()
-                .fill(EventProvider.shared.hasEvent(on: cell.date) && cell.inMonth
+                .fill(eventProvider.hasEvent(on: cell.date) && cell.inMonth
                       ? Color.accentColor : .clear)
                 .frame(width: t.eventDot, height: t.eventDot)
                 .offset(y: t.eventDot)
         }
-        .background(bandBg(cell))
         .contentShape(Rectangle())
         // 双击：打开新建日程面板（单击是选中，两个手势必须按 2 → 1 的顺序挂）
         .onTapGesture(count: 2) {

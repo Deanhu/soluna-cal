@@ -58,7 +58,7 @@ enum SolunaCalMain {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var fallbackWindow: NSWindow?
@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventWindow: NSWindow?
     private var yearWindow: NSWindow?
     private var yijiWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private var timer: Timer?
     private var hoverTimer: Timer?
     private let store = BirthdayStore()
@@ -349,12 +350,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       onEditEvent: { [weak self] day in self?.showEventEditor(day) },
                                       onOpenYiji: { [weak self] day in self?.showYijiWindow(day) }) { [weak self] in
             self?.fallbackWindow?.close()
-            self?.fallbackWindow = nil
         }
-        let wc = NSWindowController(window: NSWindow(
+        let wc = NSWindowController(window: CloseableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 600),
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "SolunaCal"
+        wc.window?.delegate = self
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = [.preferredContentSize]
         wc.window?.contentViewController = hosting
@@ -400,38 +401,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        // CloseableWindow：配件 App 没有「窗口」菜单，⌘W 走菜单那条路不通，
+        // 直接在窗口里把 Esc / ⌘W 接成关窗，和其他 Mac 应用行为一致
+        let w = CloseableWindow(contentRect: NSRect(origin: .zero, size: size),
+                                styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = title
         w.contentViewController = NSHostingController(rootView: view)
         w.isReleasedWhenClosed = false
+        w.delegate = self
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         slot = w
     }
 
+    /// 关闭任意已打开的面板窗口（弹窗还开着时先收，避免它浮在新窗口背后）
+    private func dismissPopover() {
+        guard popover != nil, popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    /// 窗口被关掉时清槽位：只靠 onClose 回调管不住「点红钮 / ⌘W」这两条路。
+    /// 槽位留着旧窗口，下次打开就是旧窗口旧状态（设置权限状态、输入框全带旧的）；
+    /// 实测已关闭窗口虽能被 makeKeyAndOrderFront 重新显示，但内容不会重建。
+    func windowWillClose(_ notification: Notification) {
+        guard let w = notification.object as? NSWindow else { return }
+        if w === settingsWindow { settingsWindow = nil }
+        else if w === eventWindow { eventWindow = nil }
+        else if w === yearWindow { yearWindow = nil }
+        else if w === yijiWindow { yijiWindow = nil }
+        else if w === fallbackWindow { fallbackWindow = nil }
+        else if w === onboardingWindow {
+            onboardingWindow = nil
+            // 引导被红钮关掉等同「跳过」：不留着每次启动重弹
+            Onboarding.markCompleted()
+        }
+    }
+
     private func showSettingsWindow() {
+        dismissPopover()
         present(&settingsWindow, title: "SolunaCal 设置",
                 size: NSSize(width: 440, height: 660),
                 view: SettingsView(store: store) { [weak self] in
                     self?.settingsWindow?.close()
-                    self?.settingsWindow = nil
                 })
     }
 
     private func showEventEditor(_ day: Date) {
+        dismissPopover()
         present(&eventWindow, title: "新建日程", size: NSSize(width: 360, height: 210),
                 view: EventEditorView(date: day) {
                     EventProvider.shared.refresh(year: Calendar(identifier: .gregorian).component(.year, from: day),
                                                  month: Calendar(identifier: .gregorian).component(.month, from: day))
                 } onClose: { [weak self] in
                     self?.eventWindow?.close()
-                    self?.eventWindow = nil
                 })
     }
 
     private func showYearWindow() {
+        dismissPopover()
         let year = Calendar(identifier: .gregorian).component(.year, from: Date())
         present(&yearWindow, title: "\(year) 年", size: NSSize(width: 420, height: 560),
                 view: YearOverviewView(
@@ -448,17 +476,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }) { [weak self] in
                     self?.yearWindow?.close()
-                    self?.yearWindow = nil
                 })
     }
 
     private func showYijiWindow(_ day: Date) {
+        dismissPopover()
         guard let yj = Yiji.on(date: day) else { return }
         present(&yijiWindow, title: "宜忌", size: NSSize(width: 380, height: 320),
                 view: YijiSheet(date: day, yi: yj.yi, ji: yj.ji,
                                 skin: UserDefaults.standard.currentSkin) { [weak self] in
                     self?.yijiWindow?.close()
-                    self?.yijiWindow = nil
                 })
     }
 
@@ -466,19 +493,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LaunchLog.write("用户从菜单栏退出")
         NSApp.terminate(nil)
         // 看门狗：某些情况下 terminate 会被模态/窗口拖住（朋友 B 点退出没反应），
-        // 1.5 秒还没退就强制结束进程
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        // 1.5 秒还没退就强制结束进程。
+        // 必须挂全局队列：主队列 asyncAfter 自己要排在主线程后面——
+        // 主线程被模态会话卡死时（正是它要兜底的场景）主队列的看门狗永远不触发。
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.5) {
             LaunchLog.write("terminate 未在 1.5 秒内完成，强制 exit(0)")
             exit(0)
         }
     }
 
-    @objc private func togglePopover() {        guard let button = statusItem.button else { return }
+    @objc private func togglePopover() {
+        guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                        popover.contentViewController?.view.window?.makeKey()
+            popover.contentViewController?.view.window?.makeKey()
         }
     }
 
@@ -494,7 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self, let button = self.statusItem.button, !self.popover.isShown else { return }
             self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                    }
+        }
     }
 
     private func updateTitle() {
@@ -511,10 +541,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOnboarding() {
-        let wc = NSWindowController(window: NSWindow(
+        let wc = NSWindowController(window: CloseableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
             styleMask: [.titled, .closable], backing: .buffered, defer: false))
         wc.window?.title = "欢迎使用 Soluna"
+        wc.window?.delegate = self
         wc.window?.contentViewController = NSHostingController(
             rootView: OnboardingView(hotKeyText: HotKeyManager.saved.display) {
                 Onboarding.markCompleted()
@@ -535,6 +566,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wc.window?.center()
         wc.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+        onboardingWindow = wc.window
+    }
+}
+
+/// 面板窗口：把 Esc / ⌘W 接成关窗。
+/// 配件应用没有「窗口」菜单，⌘W 沿菜单链根本到不了这里，只能窗口自己接。
+final class CloseableWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) { close() }
+    override func performClose(_ sender: Any?) { close() }
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 53:                        // Esc
+            close()
+        default:
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "w" {
+                close()
+            } else {
+                super.keyDown(with: event)
+            }
+        }
     }
 }
 

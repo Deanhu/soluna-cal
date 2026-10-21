@@ -1,6 +1,7 @@
 import Foundation
 import EventKit
 import ServiceManagement
+import Combine
 
 /// 宜忌查询（数据见 Generated/YijiData.swift，2025–2027 内置）
 public enum Yiji {
@@ -13,10 +14,14 @@ public enum Yiji {
 }
 
 /// 系统日历事件只读（EventKit；授权被拒时静默降级为无点）
-public final class EventProvider {
+///
+/// 可观察：弹窗与「新建日程」窗口是两棵独立的视图树，保存后弹窗不会自动
+/// 重绘——sheet 时代共处一棵树所以看不出来，窗口化之后这是必修的。
+public final class EventProvider: ObservableObject {
     public static let shared = EventProvider()
     private let store = EKEventStore()
-    private var cached: [String: [EventItem]] = [:]   // "yyyy-M-d" -> 当日事件
+    /// 当日事件缓存。标记 @Published：刷新时驱动所有观察它的界面重绘
+    @Published public private(set) var cached: [String: [EventItem]] = [:]   // "yyyy-M-d" -> 当日事件
 
     /// 一条日程：标题之外还留时间与日历名。
     /// 光有标题时，「同名事件出现在两个日历」会被显示成完全一样的两行，无处分辨。
@@ -30,8 +35,8 @@ public final class EventProvider {
 
     private init() {}
 
-    /// 是否已获系统日历授权（驱动「授权后显示」提示文案）
-    public private(set) var authorized = false
+    /// 是否已获系统日历授权（驱动「授权后显示」提示文案）；也标记 @Published
+    @Published public private(set) var authorized = false
 
     /// 请求授权；授权通过后立即执行 completion（用于首刷当月事件点）
     public func requestAccessIfNeeded(then completion: (() -> Void)? = nil) {

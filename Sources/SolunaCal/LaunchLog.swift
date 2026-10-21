@@ -36,7 +36,14 @@ enum LaunchLog {
         return df
     }()
 
+    /// stampFormatter 是共享 static，DateFormatter 本身不是线程安全的。
+    /// 退出看门狗跑在全局队列上也要写日志（「terminate 卡住」这句恰好在那里），
+    /// 所以整段写盘加锁串行化，避免并发进 DateFormatter 崩掉。
+    private static let writeLock = NSLock()
+
     static func write(_ message: String) {
+        writeLock.lock()
+        defer { writeLock.unlock() }
         let line = "[\(stampFormatter.string(from: Date()))] \(message)\n"
         let url = fileURL
         let fm = FileManager.default
