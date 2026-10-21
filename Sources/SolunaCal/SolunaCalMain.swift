@@ -168,7 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         popover = NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 300, height: 400)
+        // 初始尺寸按当前密度算，否则打开瞬间是 300 宽、0.15 秒后才跳到正确宽度，
+        // 看起来像「先窄一下再弹开」。内容宽 = popoverWidth + 左右各 6pt。
+        let densityRaw = UserDefaults.standard.string(forKey: "popoverDensity")
+            ?? PopoverDensity.standard.rawValue
+        let initialWidth = (PopoverDensity(rawValue: densityRaw) ?? .standard).tokens.popoverWidth + 12
+        popover.contentSize = NSSize(width: initialWidth, height: 400)
         let popoverHC = NSHostingController(rootView: CalendarPopoverView(store: store))
         self.popoverHC = popoverHC
         // 让 popover 跟随内容尺寸（弹窗密度切换时自动伸缩）
@@ -277,10 +282,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.popoverSizeTimer = nil
                 return
             }
-            guard let ideal = self.popoverHC?.preferredContentSize.height, ideal > 0 else { return }
+            guard let ideal = self.popoverHC?.preferredContentSize,
+                  ideal.height > 0, ideal.width > 0 else { return }
             let screenH = (self.popover.contentViewController?.view.window?.screen
                            ?? NSScreen.main)?.visibleFrame.height ?? 800
-            let target = NSSize(width: 300, height: min(ideal, screenH - 120))
+            // 宽度必须取内容的理想宽度，不能写死：内容宽 = popoverWidth + 左右各 6pt 内边距，
+            // 三档密度分别是 276 / 312 / 348。写死 300 会让标准档窄 12pt、紧凑档反而变宽。
+            let target = NSSize(width: ideal.width, height: min(ideal.height, screenH - 120))
             if abs(self.popover.contentSize.height - target.height) > 0.5 {
                 self.popover.contentSize = target
             }
