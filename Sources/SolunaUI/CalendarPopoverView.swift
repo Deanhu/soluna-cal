@@ -25,14 +25,19 @@ public struct CalendarPopoverView: View {
     public init(store: BirthdayStore, initialMonth: Date? = nil,
                 initialSelected: Date? = nil,
                 fixedHeight: Bool = true,
-                initialAccessDenied: Bool = false) {
+                initialAccessDenied: Bool = false,
+                initialPendingDeleteID: String? = nil) {
         self.fixedHeight = fixedHeight
         self.store = store
         _displayed = State(initialValue: initialMonth ?? Date())
         _selectedDay = State(initialValue: initialSelected)
         // 只给离屏渲染用：正常运行时它由「点授权没拿到权限」置位
         _accessDenied = State(initialValue: initialAccessDenied)
+        self.initialPendingDeleteID = initialPendingDeleteID
     }
+
+    /// 只给离屏渲染用：让某条日程直接落在「删除确认」状态
+    private let initialPendingDeleteID: String?
     @ObservedObject var store: BirthdayStore
     /// 弹窗与「新建日程」窗口是两棵视图树：不观察 EventProvider，
     /// 窗口里保存的日程要等下次翻月/重开弹窗才刷新（sheet 时代共树所以不暴露）
@@ -76,7 +81,8 @@ public struct CalendarPopoverView: View {
                                   })
                               },
                               accessDenied: accessDenied,
-                              onOpenYiji: { d in onOpenYiji?(d) })
+                              onOpenYiji: { d in onOpenYiji?(d) },
+                              initialPendingDeleteID: initialPendingDeleteID)
             }
             if selectedDay == nil, yijiEnabled, let yj = Yiji.on(date: Date()) {
                 // 与详情卡里的宜忌摘要同一套排版；未选中日期时也要能点开完整内容

@@ -604,10 +604,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 弹窗/兜底窗口共用同一份视图装配：模态一律走独立窗口，视图里不再有 sheet
     private func makePopoverView(fixedHeight: Bool, initialMonth: Date? = nil,
                                  initialSelected: Date? = nil,
-                                 initialAccessDenied: Bool = false) -> CalendarPopoverView {
+                                 initialAccessDenied: Bool = false,
+                                 initialPendingDeleteID: String? = nil) -> CalendarPopoverView {
         var v = CalendarPopoverView(store: store, initialMonth: initialMonth,
                                     initialSelected: initialSelected, fixedHeight: fixedHeight,
-                                    initialAccessDenied: initialAccessDenied)
+                                    initialAccessDenied: initialAccessDenied,
+                                    initialPendingDeleteID: initialPendingDeleteID)
         v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
         v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
         v.onOpenYear = { [weak self] month in self?.showYearWindow(containing: month) }
@@ -881,7 +883,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let ev = EventProvider.shared.addLocalEvent(title: "本机测试", on: day)
         print("local-event added dayKey=\(ev.dayKey) total=\(EventProvider.shared.localEvents.count)")
-        showPopover(startingAt: day, selected: day)
+        // --pending-delete：把这条直接停在「删除确认」状态，用来验收那一行的排版
+        let pending = CommandLine.arguments.contains("--pending-delete") ? ev.id.uuidString : nil
+        showPopover(startingAt: day, selected: day, pendingDeleteID: pending)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             print("local-event hasEvent=\(EventProvider.shared.hasEvent(on: day))")
             print("local-event listed=\(EventProvider.shared.events(on: day).map { $0.title })")
@@ -1000,11 +1004,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 重建顺带解决了「年视图选完月份」—— 目标月份直接当初始值传进来，
     /// 不靠通知：弹窗没显示时 SwiftUI 的 onReceive 还没订阅上，通知会丢。
     private func showPopover(startingAt month: Date? = nil, selected: Date? = nil,
-                             accessDenied: Bool = false) {
+                             accessDenied: Bool = false,
+                             pendingDeleteID: String? = nil) {
         guard let button = statusItem.button else { return }
         let view = makePopoverView(fixedHeight: true, initialMonth: month ?? Date(),
                                    initialSelected: selected,
-                                   initialAccessDenied: accessDenied)
+                                   initialAccessDenied: accessDenied,
+                                   initialPendingDeleteID: pendingDeleteID)
         let hc = NSHostingController(rootView: view)
         hc.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hc

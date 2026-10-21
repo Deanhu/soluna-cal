@@ -261,6 +261,36 @@ public final class EventProvider: ObservableObject {
         refresh(year: cal.component(.year, from: date), month: cal.component(.month, from: date))
         return .system
     }
+
+    /// 删掉一条日程。成功返回 nil，失败返回一句能直接显示给人看的原因。
+    ///
+    /// 以前只给「本机」条目删，系统日历的当作「归『日历』App 管」不碰。
+    /// 但那是我自己在 App 里建的日程，用户没理由还要切到别的 App 去删 ——
+    /// 而且入口藏在右键菜单里，等于没有。
+    /// 重复日程只删「本次」（`.thisEvent`），不动整个系列。
+    public func delete(_ item: EventItem) -> String? {
+        if let lid = item.localID {
+            removeLocalEvent(id: lid)
+            return nil
+        }
+        guard authorized else { return "没拿到日历权限，删不了系统日历里的日程" }
+        guard let ev = store.event(withIdentifier: item.id) else {
+            return "这条日程已经不在系统日历里了"
+        }
+        // 订阅日历 / 节假日日历是只读的，先挡掉，别等 remove 抛一个看不懂的错
+        if let c = ev.calendar, !c.allowsContentModifications {
+            return "「\(c.title)」是只读日历，删不了"
+        }
+        do {
+            try store.remove(ev, span: .thisEvent, commit: true)
+        } catch {
+            return "删除失败：\(error.localizedDescription)"
+        }
+        let cal = Calendar(identifier: .gregorian)
+        refresh(year: cal.component(.year, from: item.start),
+                month: cal.component(.month, from: item.start))
+        return nil
+    }
 }
 
 /// 登录自启（SMAppService，macOS 13+）

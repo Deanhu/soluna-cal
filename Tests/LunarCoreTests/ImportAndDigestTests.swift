@@ -189,4 +189,21 @@ final class ImportAndDigestTests: XCTestCase {
         XCTAssertEqual(EventProvider.merge([one], []).count, 1)
         XCTAssertTrue(EventProvider.merge([], []).isEmpty)
     }
+
+    /// 删本机日程：删掉之后同一天就查不到了，而且不留残留。
+    /// （系统日历那条分支要真日历权限，单测里跑不了，只能靠 --dump-events 手工验。）
+    func testDeleteLocalEventRemovesItFromTheDay() {
+        let p = EventProvider.shared
+        let day = Date(timeIntervalSince1970: 1_800_000_000)
+        let before = p.localEvents.count
+        let ev = p.addLocalEvent(title: "待删测试", on: day)
+        XCTAssertTrue(p.hasEvent(on: day), "加完应该能查到")
+
+        guard let item = p.events(on: day).first(where: { $0.localID == ev.id }) else {
+            return XCTFail("混排结果里应该有这条本机日程")
+        }
+        XCTAssertNil(p.delete(item), "本机日程删除不该报错")
+        XCTAssertFalse(p.events(on: day).contains { $0.localID == ev.id })
+        XCTAssertEqual(p.localEvents.count, before, "删完不该有残留")
+    }
 }

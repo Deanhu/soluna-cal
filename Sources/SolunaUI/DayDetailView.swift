@@ -17,6 +17,14 @@ public struct DayDetailView: View {
     /// 打开完整宜忌（作为独立窗口）。sheet 挂在 NSPopover 上会变幽灵窗口，不能用
     let onOpenYiji: ((Date) -> Void)?
 
+    /// 正在二次确认的那一条（存 id 不存整条：事件删掉后对象就过期了）。
+    /// 弹窗里不能开 sheet / alert（会变幽灵窗口），所以确认界面直接替换那一行本身。
+    @State private var pendingDeleteID: String?
+    /// 鼠标停在哪条上：删除按钮默认低对比，悬停才变红，避免一行里全是红叉
+    @State private var hoveredID: String?
+    /// 删除失败的原因，就地显示 —— 不做静默失败
+    @State private var deleteError: String?
+
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
                 showYiji: Bool,
@@ -24,7 +32,8 @@ public struct DayDetailView: View {
                 onAddEvent: @escaping () -> Void,
                 onRequestAccess: @escaping () -> Void = {},
                 accessDenied: Bool = false,
-                onOpenYiji: ((Date) -> Void)? = nil) {
+                onOpenYiji: ((Date) -> Void)? = nil,
+                initialPendingDeleteID: String? = nil) {
         self.date = date
         self.calendar = calendar
         self.showYiji = showYiji
@@ -33,6 +42,8 @@ public struct DayDetailView: View {
         self.onRequestAccess = onRequestAccess
         self.accessDenied = accessDenied
         self.onOpenYiji = onOpenYiji
+        // 只给离屏渲染用：正常运行时由点「×」置位
+        _pendingDeleteID = State(initialValue: initialPendingDeleteID)
     }
 
     private static let weekdayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -63,6 +74,13 @@ public struct DayDetailView: View {
     }
 
     private var events: [EventProvider.EventItem] { EventProvider.shared.events(on: date) }
+
+    /// 执行删除。失败原因留在卡片里，不静默吞掉。
+    private func confirmDelete(_ item: EventProvider.EventItem) {
+        deleteError = EventProvider.shared.delete(item)
+        pendingDeleteID = nil
+        hoveredID = nil
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -137,24 +155,60 @@ public struct DayDetailView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
                 ForEach(events) { item in
-                    HStack(spacing: 4) {
-                        Text(item.isAllDay ? "全天" : Self.timeFormatter.string(from: item.start))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        Text(item.title).font(.system(size: 11)).lineLimit(1)
-                        // 本机的始终标出来：它没进系统日历，用户得知道
-                        if item.localID != nil || (events.count > 1 && item.calendarTitle != "?") {
-                            Text(item.calendarTitle)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
+                    if pendingDeleteID == item.id {
+                        // 二次确认：删日程是不可逆的，但也不能为此弹模态
+                        HStack(spacing: 6) {
+                            Text("删除「\(item.title)」？")
+                                .font(.system(size: 10)).lineLimit(1)
+                            Spacer(minLength: 0)
+                            Button("删除") { confirmDelete(item) }
+                                .buttonStyle(.plain).font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.red)
+                            Button("取消") { pendingDeleteID = nil }
+                                .buttonStyle(.plain).font(.system(size: 10))
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    // 系统日历的条目归「日历」App 管，这里只给本机的删
-                    .contextMenu {
-                        if let lid = item.localID {
-                            Button("删除这条本机日程", role: .destructive) {
-                                EventProvider.shared.removeLocalEvent(id: lid)
+                    } else {
+                        HStack(spacing: 4) {
+                            Text(item.isAllDay ? "全天" : Self.timeFormatter.string(from: item.start))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(item.title).font(.system(size: 11)).lineLimit(1)
+                            // 本机的始终标出来：它没进系统日历，用户得知道
+                            if item.localID != nil || (events.count > 1 && item.calendarTitle != "?") {
+                                Text(item.calendarTitle)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 2)
+                            // 删除入口。原来只藏在右键菜单里 —— 没人会去右键一行日程，
+                            // 结果就是「没有删除功能」。常驻显示，但压低对比度。
+                            Button {
+                                deleteError = nil
+                                pendingDeleteID = item.id
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .frame(width: 12, height: 12)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(hoveredID == item.id ? Color.red : Color.secondary.opacity(0.5))
+                            .help(item.localID != nil
+                                  ? "删除这条本机日程"
+                                  : "删除这条日程（系统「日历」里也会一起删掉）")
+                        }
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside { hoveredID = item.id }
+                            else if hoveredID == item.id { hoveredID = nil }
+                        }
+                        .contextMenu {
+                            Button(item.localID != nil ? "删除这条本机日程" : "删除这条日程",
+                                   role: .destructive) {
+                                deleteError = nil
+                                pendingDeleteID = item.id
                             }
                         }
                     }
@@ -162,6 +216,11 @@ public struct DayDetailView: View {
                 }
                 }
                 .frame(maxHeight: 72, alignment: .top)
+                if let err = deleteError {
+                    Text(err)
+                        .font(.system(size: 9)).foregroundStyle(.red)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
