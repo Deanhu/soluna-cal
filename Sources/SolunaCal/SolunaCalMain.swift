@@ -61,6 +61,8 @@ enum SolunaCalMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var popoverHC: NSHostingController<CalendarPopoverView>?
+    private var popoverSizeTimer: Timer?
     private var timer: Timer?
     private var hoverTimer: Timer?
     private let store = BirthdayStore()
@@ -168,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 300, height: 400)
         let popoverHC = NSHostingController(rootView: CalendarPopoverView(store: store))
+        self.popoverHC = popoverHC
         // 让 popover 跟随内容尺寸（弹窗密度切换时自动伸缩）
         popoverHC.sizingOptions = [.preferredContentSize]
         popover.contentViewController = popoverHC
@@ -261,11 +264,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    /// NSPopover 不会因为 SwiftUI 内容变高而自己长大：选中日期后卡片多出几行，
+    /// 弹窗仍按旧高度显示，多出的差额会被压到某一行上（文字被切成半截）。
+    /// hosting controller 的 preferredContentSize 是「理想高度」，不受弹窗当前高度影响，
+    /// 因此显示期间按它同步；弹窗关闭后定时器自行停止。
+    private func startPopoverSizeSync() {
+        popoverSizeTimer?.invalidate()
+        popoverSizeTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            guard self.popover.isShown else {
+                self.popoverSizeTimer?.invalidate()
+                self.popoverSizeTimer = nil
+                return
+            }
+            guard let ideal = self.popoverHC?.preferredContentSize.height, ideal > 0 else { return }
+            let screenH = (self.popover.contentViewController?.view.window?.screen
+                           ?? NSScreen.main)?.visibleFrame.height ?? 800
+            let target = NSSize(width: 300, height: min(ideal, screenH - 120))
+            if abs(self.popover.contentSize.height - target.height) > 0.5 {
+                self.popover.contentSize = target
+            }
+        }
+    }
+
     @objc private func togglePopover() {        guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            startPopoverSizeSync()
             popover.contentViewController?.view.window?.makeKey()
         }
     }
@@ -282,6 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self, let button = self.statusItem.button, !self.popover.isShown else { return }
             self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            startPopoverSizeSync()
         }
     }
 

@@ -87,7 +87,7 @@ public struct DayDetailView: View {
             if showYiji, let yj = Yiji.on(date: date, calendar: calendar) {
                 // 一行塞「宜…忌…」时，忌会被整段挤掉；拆成两行各自省略，
                 // 至少两边都能看到开头；完整内容点开看。
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     yijiLine("宜", yj.yi)
                     yijiLine("忌", yj.ji)
                 }
@@ -148,11 +148,12 @@ public struct DayDetailView: View {
 
     /// 宜 / 忌 各一行：标签定宽对齐，内容单行省略
     private func yijiLine(_ label: String, _ items: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(label)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 10, alignment: .center)
+                .fixedSize()                       // 不能被压缩，否则「宜/忌」会被切掉
+                .frame(width: 13, alignment: .center)
             Text(items)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
