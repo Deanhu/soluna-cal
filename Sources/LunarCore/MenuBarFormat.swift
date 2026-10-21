@@ -92,4 +92,8 @@ public extension Notification.Name {
     static let menuBarStyleNeedsUpdate = Notification.Name("menuBarStyleNeedsUpdate")
     /// 弹窗密度变了：弹窗尺寸是按密度固定的，需要重算一次
     static let popoverDensityNeedsUpdate = Notification.Name("popoverDensityNeedsUpdate")
+    /// 统一退出入口：AppDelegate 收到后执行 terminate，并带看门狗兜底
+    static let solunaQuitRequested = Notification.Name("solunaQuitRequested")
+    /// 年视图里点了某个月：通知弹窗跳到那个月（年视图现在是独立窗口，拿不到视图状态）
+    static let solunaJumpToMonth = Notification.Name("solunaJumpToMonth")
 }

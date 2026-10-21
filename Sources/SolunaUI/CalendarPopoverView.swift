@@ -14,6 +14,13 @@ public struct CalendarPopoverView: View {
     /// 弹窗要固定高度（避免尺寸随内容跳动）；嵌进窗口时不需要，交给窗口自适应
     private let fixedHeight: Bool
 
+    // 所有模态都交给独立窗口：sheet 挂在 transient 的 NSPopover 上，
+    // 父窗口一关 sheet 就变成关不掉的幽灵窗口，还会把 App 卡住。
+    public var onOpenSettings: (() -> Void)?
+    public var onEditEvent: ((Date) -> Void)?
+    public var onOpenYear: (() -> Void)?
+    public var onOpenYiji: ((Date) -> Void)?
+
     public init(store: BirthdayStore, initialMonth: Date? = nil,
                 initialSelected: Date? = nil, initialEditing: Date? = nil,
                 fixedHeight: Bool = true) {
@@ -70,39 +77,13 @@ public struct CalendarPopoverView: View {
                height: fixedHeight ? t.popoverHeight : nil)
         .padding(.horizontal, 6)
         .background(Color(nsColor: .controlBackgroundColor))
-        .sheet(isPresented: $showSettings) { SettingsView(store: store) }
-        .sheet(isPresented: Binding(
-            get: { editingDay != nil },
-            set: { if !$0 { editingDay = nil } }
-        )) {
-            if let day = editingDay {
-                EventEditorView(date: day, calendar: cal) {
-                    EventProvider.shared.refresh(
-                        year: cal.component(.year, from: day),
-                        month: cal.component(.month, from: day))
-                }
-            }
-        }
-        .sheet(isPresented: $showYear) {
-            let year = cal.component(.year, from: displayed)
-            YearOverviewView(
-                year: year,
-                digest: YearDigest.build(year: year, calendar: cal) { d, lunar in
-                    guard let b = store.match(date: d, lunar: lunar) else { return nil }
-                    return b.name.count <= 2 ? b.name : "生日"
-                },
-                skin: skin,
-                onPick: { month in
-                    if let d = cal.date(from: DateComponents(year: year, month: month, day: 1)) {
-                        displayed = d
-                    }
-                }
-            )
-        }
         .onAppear { refreshEvents() }
         .onChange(of: displayed) { refreshEvents() }
         .onReceive(NotificationCenter.default.publisher(for: .locationDidUpdate)) { _ in
             locationTick += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .solunaJumpToMonth)) { note in
+            if let d = note.object as? Date { displayed = d }
         }
     }
 
@@ -122,7 +103,7 @@ public struct CalendarPopoverView: View {
             Button(action: { shiftMonth(-1) }) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             Spacer()
-            Button(action: { showYear = true }) {
+            Button(action: { onOpenYear?() }) {
                 HStack(spacing: 2) {
                     Text(monthTitle).font(.headline)
                     Image(systemName: "chevron.down")
@@ -238,6 +219,7 @@ public struct CalendarPopoverView: View {
         // 双击：打开新建日程面板（单击是选中，两个手势必须按 2 → 1 的顺序挂）
         .onTapGesture(count: 2) {
             editingDay = cell.date
+            onEditEvent?(cell.date)
         }
         .onTapGesture(count: 1) {
             selectedDay = isSelected(cell) ? nil : cell.date
@@ -316,7 +298,7 @@ public struct CalendarPopoverView: View {
                 + Text(" 天").font(.system(size: t.footerFont)).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(action: { showSettings = true }) { Image(systemName: "gearshape") }
+            Button(action: { onOpenSettings?() }) { Image(systemName: "gearshape") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             Button(action: { displayed = Date() }) { Text("回到今天") }
                 .buttonStyle(.plain).font(.system(size: t.footerFont)).foregroundStyle(Color.accentColor)

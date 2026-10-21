@@ -9,6 +9,7 @@ public struct EventEditorView: View {
     let date: Date
     let calendar: Calendar
     let onSaved: () -> Void
+    let onClose: (() -> Void)?
 
     @State private var title = ""
     @State private var error: String?
@@ -17,11 +18,12 @@ public struct EventEditorView: View {
 
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
-                onSaved: @escaping () -> Void) {
+                onSaved: @escaping () -> Void,
+                onClose: (() -> Void)? = nil) {
         self.date = date
         self.calendar = calendar
         self.onSaved = onSaved
-        _ = calendar
+        self.onClose = onClose
     }
 
     private var dateTitle: String {
@@ -51,7 +53,7 @@ public struct EventEditorView: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button("取消") { if let onClose { onClose() } else { dismiss() } }
                 Button("保存") { save() }
                     .buttonStyle(.borderedProminent)
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -68,7 +70,7 @@ public struct EventEditorView: View {
         do {
             try EventProvider.shared.addEvent(title: trimmed, on: date)
             onSaved()
-            dismiss()
+            if let onClose { onClose() } else { dismiss() }
         } catch {
             self.error = "写入失败：\(error.localizedDescription)"
         }

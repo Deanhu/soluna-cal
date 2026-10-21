@@ -11,17 +11,20 @@ public struct YijiSheet: View {
     let ji: String
     let calendar: Calendar
     let skin: Skin
+    let onClose: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
 
     public init(date: Date, yi: String, ji: String,
                 calendar: Calendar = Calendar(identifier: .gregorian),
-                skin: Skin = .default) {
+                skin: Skin = .default,
+                onClose: (() -> Void)? = nil) {
         self.date = date
         self.yi = yi
         self.ji = ji
         self.calendar = calendar
         self.skin = skin
+        self.onClose = onClose
     }
 
     private var title: String {
@@ -41,7 +44,7 @@ public struct YijiSheet: View {
 
             HStack {
                 Spacer()
-                Button("关闭") { dismiss() }
+                Button("关闭") { if let onClose { onClose() } else { dismiss() } }
                     .keyboardShortcut(.defaultAction)
             }
         }

@@ -37,7 +37,13 @@ public struct SettingsView: View {
     @State private var newCycle: BirthdayStore.Entry.Cycle = .yearly
     @Environment(\.dismiss) private var dismiss
 
-    public init(store: BirthdayStore) { self.store = store }
+    /// 作为独立窗口呈现时，关闭要关窗（dismiss 对普通窗口无效）
+    let onClose: (() -> Void)?
+
+    public init(store: BirthdayStore, onClose: (() -> Void)? = nil) {
+        self.store = store
+        self.onClose = onClose
+    }
 
     /// 页脚展示的版本号
     static var versionText: String {
@@ -45,6 +51,25 @@ public struct SettingsView: View {
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
         return "\(short) (\(build))"
+    }
+
+    private var headerBar: some View {
+        HStack {
+            Text("设置").font(.headline)
+            Spacer()
+            Button(action: closeAction) {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("关闭")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    /// 作为窗口时关窗；作为 sheet 时 dismiss。抽出来是为了让 body 的表达式简单到能编译
+    private func closeAction() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     // MARK: 版式基准
@@ -56,199 +81,17 @@ public struct SettingsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("设置").font(.headline)
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            headerBar
 
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    section("显示") {
-                        toggleRow("显示宜忌（黄历）", $yijiEnabled)
-                        toggleRow("显示放假倒计时", $countdownEnabled)
-                        toggleRow("显示干支时辰（真太阳时）", $ganzhiEnabled)
-                            .onChange(of: ganzhiEnabled) { if ganzhiEnabled { LocationProvider.shared.locate() } }
-                    }
-
-                    section("菜单栏") {
-                        row("菜单栏形态") {
-                            Picker("菜单栏形态", selection: $statusItemStyle) {
-                                Text("图标+文字").tag(1)
-                                Text("仅图标").tag(2)
-                                Text("仅文字").tag(0)
-                            }
-                            .labelsHidden().pickerStyle(.segmented)
-                            .onChange(of: statusItemStyle) {
-                                NotificationCenter.default.post(name: .menuBarStyleNeedsUpdate, object: nil)
-                            }
-                        }
-                        if statusItemStyle != 2 {
-                            hint("右上角看不到它时，切「仅图标」更容易露出来")
-                        }
-
-                        row("菜单栏格式") {
-                            Picker("菜单栏格式", selection: formatChoice) {
-                                Text("简洁").tag(0)
-                                Text("带农历").tag(1)
-                                Text("农历优先").tag(2)
-                                Text("自定义").tag(3)
-                            }
-                            .labelsHidden().pickerStyle(.segmented)
-                        }
-                        if formatChoice.wrappedValue == 3 {
-                            templateEditor
-                        }
-
-                    }
-
-                    section("交互") {
-                        toggleRow("登录后自动启动", $launchAtLogin)
-                            .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
-
-                        toggleRow("悬停弹出", $hoverEnabled)
-                        if hoverEnabled {
-                            HStack(spacing: 8) {
-                                Slider(value: $hoverDelay, in: 0.2...1.5, step: 0.1)
-                                Text(String(format: "%.1fs", hoverDelay))
-                                    .font(.caption).foregroundStyle(.secondary)
-                                    .frame(width: 34, alignment: .trailing)
-                            }
-                            .padding(.leading, 2)
-                            .padding(.vertical, 2)
-                        }
-
-                        row("呼出快捷键") {
-                            Button(recordingHotKey ? "按下新快捷键…" : HotKeyManager.saved.display) {
-                                recordingHotKey.toggle()
-                            }
-                            .font(.system(size: 11, design: .monospaced))
-                            .controlSize(.small)
-                        }
-
-                        row("弹窗密度") {
-                            Picker("弹窗密度", selection: $popoverDensity) {
-                                ForEach(PopoverDensity.allCases) { d in Text(d.label).tag(d.rawValue) }
-                            }
-                            .labelsHidden().pickerStyle(.segmented)
-                            .onChange(of: popoverDensity) {
-                                NotificationCenter.default.post(name: .popoverDensityNeedsUpdate, object: nil)
-                            }
-                        }
-
-                        row("皮肤") {
-                            Picker("皮肤", selection: $skinRaw) {
-                                ForEach(Skin.allCases) { s in Text(s.label).tag(s.rawValue) }
-                            }
-                            .labelsHidden().pickerStyle(.segmented)
-                        }
-                    }
-
-                    section("通知") {
-                        HStack(spacing: 6) {
-                            Text("系统权限").font(labelFont).foregroundStyle(.secondary)
-                            Spacer()
-                            Text(authText).font(.caption).foregroundStyle(authColor)
-                            if notifyAuth == .denied {
-                                Button("去系统设置") { openNotificationSettings() }
-                                    .buttonStyle(.link).font(.caption)
-                            }
-                        }
-                        .frame(minHeight: 20)
-
-                        toggleRow("放假前一日提醒（18:00）", $notifyHolidayEve).onChange(of: notifyHolidayEve) { reschedule() }
-                        toggleRow("节日当天提醒（09:00）", $notifyFestival).onChange(of: notifyFestival) { reschedule() }
-                        toggleRow("生日/纪念日提醒（09:00）", $notifyBirthday).onChange(of: notifyBirthday) { reschedule() }
-                        toggleRow("免打扰时段", $dndEnabled).onChange(of: dndEnabled) { reschedule() }
-                        if dndEnabled {
-                            HStack(spacing: 6) {
-                                DatePicker("", selection: dndStart, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().frame(width: 70)
-                                Text("至").font(.caption).foregroundStyle(.secondary)
-                                DatePicker("", selection: dndEnd, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().frame(width: 70)
-                            }
-                            .padding(.leading, 2)
-                            .padding(.vertical, 2)
-                        }
-
-                        hint(nextReminderText)
-                    }
-
-                    section("生日 / 纪念日") {
-                        HStack {
-                            Text("已添加 \(store.entries.count) 条").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("批量添加") { showImport = true }
-                                .buttonStyle(.link).font(.caption)
-                        }
-                        .frame(minHeight: 20)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                TextField("名字", text: $newName)
-                                    .textFieldStyle(.roundedBorder).frame(width: 120)
-                                Picker("历法", selection: $newKind) {
-                                    Text("农历").tag(BirthdayStore.Entry.CalendarKind.lunar)
-                                    Text("公历").tag(BirthdayStore.Entry.CalendarKind.solar)
-                                }.labelsHidden().frame(width: 64)
-                                Picker("重复", selection: $newCycle) {
-                                    Text("每年").tag(BirthdayStore.Entry.Cycle.yearly)
-                                    Text("每月").tag(BirthdayStore.Entry.Cycle.monthly)
-                                }.labelsHidden().frame(width: 64)
-                            }
-                            HStack(spacing: 6) {
-                                Picker("月", selection: $newMonth) {
-                                    ForEach(1...12, id: \.self) {
-                                        Text(newKind == .lunar ? LunarDate.monthName($0) + "月" : "\($0)月").tag($0)
-                                    }
-                                }.labelsHidden().frame(width: 76)
-                                Picker("日", selection: $newDay) {
-                                    ForEach(1...(newKind == .lunar ? 30 : 31), id: \.self) {
-                                        Text(newKind == .lunar ? LunarDate.dayName($0) : "\($0)日").tag($0)
-                                    }
-                                }.labelsHidden().frame(width: 76)
-                                Button("添加") {
-                                    guard !newName.isEmpty else { return }
-                                    store.add(.init(name: newName, lunarMonth: newMonth, lunarDay: newDay,
-                                                    calendar: newKind, cycle: newCycle))
-                                    newName = ""
-                                    reschedule()   // 生日提醒纳入新条目
-                                }.disabled(newName.isEmpty)
-                            }
-                        }
-                        .padding(.vertical, 4)
-
-                        if !store.entries.isEmpty {
-                            ForEach(sortedEntries, id: \.entry.id) { item in
-                                HStack {
-                                    Text(item.entry.name).font(labelFont)
-                                    Spacer()
-                                    Text(describe(item.entry))
-                                        .foregroundStyle(.secondary).font(.caption)
-                                    Text(countdownText(item.days))
-                                        .font(.caption)
-                                        .frame(width: 52, alignment: .trailing)
-                                        .foregroundStyle(item.days <= 7
-                                            ? Color.adaptive(light: 0xD43030, dark: 0xFF6961)
-                                            : Color.secondary)
-                                    Button("删") { store.remove(item.entry); reschedule() }
-                                        .buttonStyle(.plain).foregroundStyle(.red).font(.caption)
-                                }
-                                .frame(minHeight: 22)
-                                .padding(.trailing, 2)
-                            }
-                        }
-                    }
-
+                    displaySection
+                    menuBarSection
+                    interactionSection
+                    notifySection
+                    birthdaySection
                     Divider().padding(.top, 14)
 
                     // 退出入口：菜单栏配件 App 没有 Dock 图标、也没有应用菜单，
@@ -258,7 +101,10 @@ public struct SettingsView: View {
                         Text("SolunaCal \(Self.versionText)")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("退出 SolunaCal") { NSApp.terminate(nil) }
+                        Button("退出 SolunaCal") {
+                            // 统一走 AppDelegate：带看门狗，万一被模态/窗口卡住也能退干净
+                            NotificationCenter.default.post(name: .solunaQuitRequested, object: nil)
+                        }
                             .controlSize(.small)
                     }
                     .padding(.top, 8)
@@ -302,6 +148,193 @@ public struct SettingsView: View {
             } else if let m = keyMonitor {
                 NSEvent.removeMonitor(m)
                 keyMonitor = nil
+            }
+        }
+    }
+
+    private var displaySection: some View {
+section("显示") {
+            toggleRow("显示宜忌（黄历）", $yijiEnabled)
+            toggleRow("显示放假倒计时", $countdownEnabled)
+            toggleRow("显示干支时辰（真太阳时）", $ganzhiEnabled)
+                .onChange(of: ganzhiEnabled) { if ganzhiEnabled { LocationProvider.shared.locate() } }
+        }
+    }
+
+    private var menuBarSection: some View {
+section("菜单栏") {
+            row("菜单栏形态") {
+                Picker("菜单栏形态", selection: $statusItemStyle) {
+                    Text("图标+文字").tag(1)
+                    Text("仅图标").tag(2)
+                    Text("仅文字").tag(0)
+                }
+                .labelsHidden().pickerStyle(.segmented)
+                .onChange(of: statusItemStyle) {
+                    NotificationCenter.default.post(name: .menuBarStyleNeedsUpdate, object: nil)
+                }
+            }
+            if statusItemStyle != 2 {
+                hint("右上角看不到它时，切「仅图标」更容易露出来")
+            }
+
+            row("菜单栏格式") {
+                Picker("菜单栏格式", selection: formatChoice) {
+                    Text("简洁").tag(0)
+                    Text("带农历").tag(1)
+                    Text("农历优先").tag(2)
+                    Text("自定义").tag(3)
+                }
+                .labelsHidden().pickerStyle(.segmented)
+            }
+            if formatChoice.wrappedValue == 3 {
+                templateEditor
+            }
+
+        }
+    }
+
+    private var interactionSection: some View {
+section("交互") {
+            toggleRow("登录后自动启动", $launchAtLogin)
+                .onChange(of: launchAtLogin) { LaunchAtLogin.enabled = launchAtLogin }
+
+            toggleRow("悬停弹出", $hoverEnabled)
+            if hoverEnabled {
+                HStack(spacing: 8) {
+                    Slider(value: $hoverDelay, in: 0.2...1.5, step: 0.1)
+                    Text(String(format: "%.1fs", hoverDelay))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+                .padding(.leading, 2)
+                .padding(.vertical, 2)
+            }
+
+            row("呼出快捷键") {
+                Button(recordingHotKey ? "按下新快捷键…" : HotKeyManager.saved.display) {
+                    recordingHotKey.toggle()
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+            }
+
+            row("弹窗密度") {
+                Picker("弹窗密度", selection: $popoverDensity) {
+                    ForEach(PopoverDensity.allCases) { d in Text(d.label).tag(d.rawValue) }
+                }
+                .labelsHidden().pickerStyle(.segmented)
+                .onChange(of: popoverDensity) {
+                    NotificationCenter.default.post(name: .popoverDensityNeedsUpdate, object: nil)
+                }
+            }
+
+            row("皮肤") {
+                Picker("皮肤", selection: $skinRaw) {
+                    ForEach(Skin.allCases) { s in Text(s.label).tag(s.rawValue) }
+                }
+                .labelsHidden().pickerStyle(.segmented)
+            }
+        }
+    }
+
+    private var notifySection: some View {
+section("通知") {
+            HStack(spacing: 6) {
+                Text("系统权限").font(labelFont).foregroundStyle(.secondary)
+                Spacer()
+                Text(authText).font(.caption).foregroundStyle(authColor)
+                if notifyAuth == .denied {
+                    Button("去系统设置") { openNotificationSettings() }
+                        .buttonStyle(.link).font(.caption)
+                }
+            }
+            .frame(minHeight: 20)
+
+            toggleRow("放假前一日提醒（18:00）", $notifyHolidayEve).onChange(of: notifyHolidayEve) { reschedule() }
+            toggleRow("节日当天提醒（09:00）", $notifyFestival).onChange(of: notifyFestival) { reschedule() }
+            toggleRow("生日/纪念日提醒（09:00）", $notifyBirthday).onChange(of: notifyBirthday) { reschedule() }
+            toggleRow("免打扰时段", $dndEnabled).onChange(of: dndEnabled) { reschedule() }
+            if dndEnabled {
+                HStack(spacing: 6) {
+                    DatePicker("", selection: dndStart, displayedComponents: .hourAndMinute)
+                        .labelsHidden().frame(width: 70)
+                    Text("至").font(.caption).foregroundStyle(.secondary)
+                    DatePicker("", selection: dndEnd, displayedComponents: .hourAndMinute)
+                        .labelsHidden().frame(width: 70)
+                }
+                .padding(.leading, 2)
+                .padding(.vertical, 2)
+            }
+
+            hint(nextReminderText)
+        }
+    }
+
+    private var birthdaySection: some View {
+section("生日 / 纪念日") {
+            HStack {
+                Text("已添加 \(store.entries.count) 条").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("批量添加") { showImport = true }
+                    .buttonStyle(.link).font(.caption)
+            }
+            .frame(minHeight: 20)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    TextField("名字", text: $newName)
+                        .textFieldStyle(.roundedBorder).frame(width: 120)
+                    Picker("历法", selection: $newKind) {
+                        Text("农历").tag(BirthdayStore.Entry.CalendarKind.lunar)
+                        Text("公历").tag(BirthdayStore.Entry.CalendarKind.solar)
+                    }.labelsHidden().frame(width: 64)
+                    Picker("重复", selection: $newCycle) {
+                        Text("每年").tag(BirthdayStore.Entry.Cycle.yearly)
+                        Text("每月").tag(BirthdayStore.Entry.Cycle.monthly)
+                    }.labelsHidden().frame(width: 64)
+                }
+                HStack(spacing: 6) {
+                    Picker("月", selection: $newMonth) {
+                        ForEach(1...12, id: \.self) {
+                            Text(newKind == .lunar ? LunarDate.monthName($0) + "月" : "\($0)月").tag($0)
+                        }
+                    }.labelsHidden().frame(width: 76)
+                    Picker("日", selection: $newDay) {
+                        ForEach(1...(newKind == .lunar ? 30 : 31), id: \.self) {
+                            Text(newKind == .lunar ? LunarDate.dayName($0) : "\($0)日").tag($0)
+                        }
+                    }.labelsHidden().frame(width: 76)
+                    Button("添加") {
+                        guard !newName.isEmpty else { return }
+                        store.add(.init(name: newName, lunarMonth: newMonth, lunarDay: newDay,
+                                        calendar: newKind, cycle: newCycle))
+                        newName = ""
+                        reschedule()   // 生日提醒纳入新条目
+                    }.disabled(newName.isEmpty)
+                }
+            }
+            .padding(.vertical, 4)
+
+            if !store.entries.isEmpty {
+                ForEach(sortedEntries, id: \.entry.id) { item in
+                    HStack {
+                        Text(item.entry.name).font(labelFont)
+                        Spacer()
+                        Text(describe(item.entry))
+                            .foregroundStyle(.secondary).font(.caption)
+                        Text(countdownText(item.days))
+                            .font(.caption)
+                            .frame(width: 52, alignment: .trailing)
+                            .foregroundStyle(item.days <= 7
+                                ? Color.adaptive(light: 0xD43030, dark: 0xFF6961)
+                                : Color.secondary)
+                        Button("删") { store.remove(item.entry); reschedule() }
+                            .buttonStyle(.plain).foregroundStyle(.red).font(.caption)
+                    }
+                    .frame(minHeight: 22)
+                    .padding(.trailing, 2)
+                }
             }
         }
     }

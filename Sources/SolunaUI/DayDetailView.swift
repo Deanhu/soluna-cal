@@ -12,21 +12,23 @@ public struct DayDetailView: View {
     let skin: Skin
     let onAddEvent: () -> Void
     let onRequestAccess: () -> Void
-
-    @State private var yijiSheetOpen = false
+    /// 打开完整宜忌（作为独立窗口）。sheet 挂在 NSPopover 上会变幽灵窗口，不能用
+    let onOpenYiji: ((Date) -> Void)?
 
     public init(date: Date,
                 calendar: Calendar = Calendar(identifier: .gregorian),
                 showYiji: Bool,
                 skin: Skin = .default,
                 onAddEvent: @escaping () -> Void,
-                onRequestAccess: @escaping () -> Void = {}) {
+                onRequestAccess: @escaping () -> Void = {},
+                onOpenYiji: ((Date) -> Void)? = nil) {
         self.date = date
         self.calendar = calendar
         self.showYiji = showYiji
         self.skin = skin
         self.onAddEvent = onAddEvent
         self.onRequestAccess = onRequestAccess
+        self.onOpenYiji = onOpenYiji
     }
 
     private static let weekdayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -90,7 +92,7 @@ public struct DayDetailView: View {
                 YijiSummary(yi: yj.yi, ji: yj.ji, skin: skin)
                     .padding(.trailing, 10)
                     .contentShape(Rectangle())
-                    .onTapGesture { yijiSheetOpen = true }
+                    .onTapGesture { onOpenYiji?(date) }
                     .overlay(alignment: .trailing) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .semibold))
@@ -142,10 +144,5 @@ public struct DayDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.top, 4)
-        .sheet(isPresented: $yijiSheetOpen) {
-            if let yj = Yiji.on(date: date, calendar: calendar) {
-                YijiSheet(date: date, yi: yj.yi, ji: yj.ji, calendar: calendar, skin: skin)
-            }
-        }
     }
 }

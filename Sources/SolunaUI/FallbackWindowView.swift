@@ -9,11 +9,24 @@ import LunarCore
 public struct FallbackWindowView: View {
     let store: BirthdayStore
     let hotKeyText: String
+    let onRequestSettings: (() -> Void)?
+    let onRequestYear: (() -> Void)?
+    let onEditEvent: ((Date) -> Void)?
+    let onOpenYiji: ((Date) -> Void)?
     let onClose: () -> Void
 
-    public init(store: BirthdayStore, hotKeyText: String, onClose: @escaping () -> Void) {
+    public init(store: BirthdayStore, hotKeyText: String,
+                onRequestSettings: (() -> Void)? = nil,
+                onRequestYear: (() -> Void)? = nil,
+                onEditEvent: ((Date) -> Void)? = nil,
+                onOpenYiji: ((Date) -> Void)? = nil,
+                onClose: @escaping () -> Void) {
         self.store = store
         self.hotKeyText = hotKeyText
+        self.onRequestSettings = onRequestSettings
+        self.onRequestYear = onRequestYear
+        self.onEditEvent = onEditEvent
+        self.onOpenYiji = onOpenYiji
         self.onClose = onClose
     }
 
@@ -42,7 +55,12 @@ public struct FallbackWindowView: View {
 
             // 定宽与真实窗口一致（340）：离屏渲染按内容理想宽度出图会偏宽，
             // 定宽后渲染结果和真机一致，也保证日历在窗口里居中
-            CalendarPopoverView(store: store, fixedHeight: false)
+            var popover = CalendarPopoverView(store: store, fixedHeight: false)
+            popover.onOpenSettings = onRequestSettings
+            popover.onOpenYear = onRequestYear
+            popover.onEditEvent = onEditEvent
+            popover.onOpenYiji = onOpenYiji
+            return popover
                 .frame(maxWidth: .infinity)
         }
         .frame(width: 340)

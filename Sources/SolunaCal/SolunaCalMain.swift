@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var fallbackWindow: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var eventWindow: NSWindow?
+    private var yearWindow: NSWindow?
+    private var yijiWindow: NSWindow?
     private var timer: Timer?
     private var hoverTimer: Timer?
     private let store = BirthdayStore()
@@ -172,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 尺寸固定：宽度 = popoverWidth + 左右各 6pt；高度直接用 token。
         // 不再随内容变化，也就不需要任何"跟随内容"的同步逻辑。
         applyPopoverSize()   // 尺寸只在一处算：按当前密度固定宽高
-        let popoverHC = NSHostingController(rootView: CalendarPopoverView(store: store))
+        let popoverView = makePopoverView(fixedHeight: true)
+        let popoverHC = NSHostingController(rootView: popoverView)
         // 让 popover 跟随内容尺寸（弹窗密度切换时自动伸缩）
         popoverHC.sizingOptions = [.preferredContentSize]
         popover.contentViewController = popoverHC
@@ -187,6 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateTitle()
         }
         // 设置里切换菜单栏形态：宽度和图标都变了，必须重建
+        NotificationCenter.default.addObserver(
+            forName: .solunaQuitRequested, object: nil, queue: .main) { [weak self] _ in
+            self?.quitApp()
+        }
         NotificationCenter.default.addObserver(
             forName: .popoverDensityNeedsUpdate, object: nil, queue: .main) { [weak self] _ in
             self?.applyPopoverSize()
@@ -334,7 +343,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let view = FallbackWindowView(store: store,
-                                      hotKeyText: HotKeyManager.saved.display) { [weak self] in
+                                      hotKeyText: HotKeyManager.saved.display,
+                                      onRequestSettings: { [weak self] in self?.showSettingsWindow() },
+                                      onRequestYear: { [weak self] in self?.showYearWindow() },
+                                      onEditEvent: { [weak self] day in self?.showEventEditor(day) },
+                                      onOpenYiji: { [weak self] day in self?.showYijiWindow(day) }) { [weak self] in
             self?.fallbackWindow?.close()
             self?.fallbackWindow = nil
         }
@@ -369,9 +382,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// 弹窗/兜底窗口共用同一份视图装配：模态一律走独立窗口，视图里不再有 sheet
+    private func makePopoverView(fixedHeight: Bool) -> CalendarPopoverView {
+        var v = CalendarPopoverView(store: store, fixedHeight: fixedHeight)
+        v.onOpenSettings = { [weak self] in self?.showSettingsWindow() }
+        v.onEditEvent = { [weak self] day in self?.showEventEditor(day) }
+        v.onOpenYear = { [weak self] in self?.showYearWindow() }
+        v.onOpenYiji = { [weak self] day in self?.showYijiWindow(day) }
+        return v
+    }
+
+    /// 统一的窗口呈现：已存在就前置，避免重复开
+    private func present<C: View>(_ slot: inout NSWindow?, title: String,
+                                  size: NSSize, view: C) {
+        if let w = slot {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = title
+        w.contentViewController = NSHostingController(rootView: view)
+        w.isReleasedWhenClosed = false
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        slot = w
+    }
+
+    private func showSettingsWindow() {
+        present(&settingsWindow, title: "SolunaCal 设置",
+                size: NSSize(width: 440, height: 660),
+                view: SettingsView(store: store) { [weak self] in
+                    self?.settingsWindow?.close()
+                    self?.settingsWindow = nil
+                })
+    }
+
+    private func showEventEditor(_ day: Date) {
+        present(&eventWindow, title: "新建日程", size: NSSize(width: 360, height: 210),
+                view: EventEditorView(date: day) {
+                    EventProvider.shared.refresh(year: Calendar(identifier: .gregorian).component(.year, from: day),
+                                                 month: Calendar(identifier: .gregorian).component(.month, from: day))
+                } onClose: { [weak self] in
+                    self?.eventWindow?.close()
+                    self?.eventWindow = nil
+                })
+    }
+
+    private func showYearWindow() {
+        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
+        present(&yearWindow, title: "\(year) 年", size: NSSize(width: 420, height: 560),
+                view: YearOverviewView(
+                    year: year,
+                    digest: YearDigest.build(year: year) { d, lunar in
+                        guard let b = self.store.match(date: d, lunar: lunar) else { return nil }
+                        return b.name.count <= 2 ? b.name : "生日"
+                    },
+                    skin: UserDefaults.standard.currentSkin,
+                    onPick: { month in
+                        let c = DateComponents(year: year, month: month, day: 1)
+                        if let d = Calendar(identifier: .gregorian).date(from: c) {
+                            NotificationCenter.default.post(name: .solunaJumpToMonth, object: d)
+                        }
+                    }) { [weak self] in
+                    self?.yearWindow?.close()
+                    self?.yearWindow = nil
+                })
+    }
+
+    private func showYijiWindow(_ day: Date) {
+        guard let yj = Yiji.on(date: day) else { return }
+        present(&yijiWindow, title: "宜忌", size: NSSize(width: 380, height: 320),
+                view: YijiSheet(date: day, yi: yj.yi, ji: yj.ji,
+                                skin: UserDefaults.standard.currentSkin) { [weak self] in
+                    self?.yijiWindow?.close()
+                    self?.yijiWindow = nil
+                })
+    }
+
     @objc private func quitApp() {
         LaunchLog.write("用户从菜单栏退出")
         NSApp.terminate(nil)
+        // 看门狗：某些情况下 terminate 会被模态/窗口拖住（朋友 B 点退出没反应），
+        // 1.5 秒还没退就强制结束进程
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            LaunchLog.write("terminate 未在 1.5 秒内完成，强制 exit(0)")
+            exit(0)
+        }
     }
 
     @objc private func togglePopover() {        guard let button = statusItem.button else { return }

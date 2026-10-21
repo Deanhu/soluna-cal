@@ -11,17 +11,20 @@ public struct YearOverviewView: View {
     let digest: [Int: [YearDigest.Item]]
     let skin: Skin
     let onPick: (Int) -> Void
+    let onClose: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
 
     public init(year: Int,
                 digest: [Int: [YearDigest.Item]],
                 skin: Skin = .default,
-                onPick: @escaping (Int) -> Void) {
+                onPick: @escaping (Int) -> Void,
+                onClose: (() -> Void)? = nil) {
         self.year = year
         self.digest = digest
         self.skin = skin
         self.onPick = onPick
+        self.onClose = onClose
     }
 
     public var body: some View {
